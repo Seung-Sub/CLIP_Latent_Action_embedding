@@ -81,8 +81,9 @@ class PMAReadout(nn.Module):
 MODULES = {"mlp": MLPConcat, "cls": CLSTransformer, "pma": PMAReadout}
 
 
-def build_policy(name, d_model=512, layers=4, heads=8):
-    return MODULES[name](d_model=d_model, layers=layers, heads=heads)
+def build_policy(name, d_model=512, layers=4, heads=8, n_tokens=3):
+    return MODULES[name](d_model=d_model, layers=layers, heads=heads,
+                         n_tokens=n_tokens)
 
 
 def policy_losses(zeta, chunk_fut, z_cur, z_next, ae, w):

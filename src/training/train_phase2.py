@@ -24,7 +24,7 @@ import yaml
 from torch.utils.data import DataLoader, TensorDataset
 
 from core.clip_wrapper import ClipWrapper
-from data.act_sim import ActSimDataset
+from data import get_dataset
 from models.networks import DeltaAE
 from models.policy import build_policy, policy_losses
 
@@ -81,7 +81,7 @@ def main():
         p.requires_grad_(False)
 
     # ---- 데이터 (삼중쌍) ----
-    ds = ActSimDataset(cfg)
+    ds = get_dataset(cfg)
     files = ds.episode_files()
     if args.smoke:
         files = files[:2]
@@ -99,6 +99,18 @@ def main():
 
     Zp_tr, Zc_tr, Zn_tr, Ap_tr, Af_tr = stack(tr_ids)
     Zp_va, Zc_va, Zn_va, Ap_va, Af_va = stack(val_ids)
+
+    # 언어 토큰 (멀티태스크 조건화): 에피소드별 지시문 임베딩을 샘플 수만큼 복제
+    use_lang = m_cfg.get("lang_token", False)
+    if use_lang:
+        lang_per_ep = [ds.instruction_embedding(clip, files[i])
+                       for i in range(len(files))]
+
+        def stack_lang(ids):
+            return np.concatenate([
+                np.repeat(lang_per_ep[i][None], len(eps[i][0]), axis=0)
+                for i in ids]).astype(np.float32)
+        L_tr, L_va = stack_lang(tr_ids), stack_lang(val_ids)
 
     def norm(A):
         return ((A.reshape(len(A), n_chunk, act_dim) - a_mean) / a_std
@@ -128,21 +140,25 @@ def main():
                         mode=wb_cfg.get("mode", "online"), config=cfg)
 
     # ---- 정책 모델 ----
+    n_tokens = 4 if use_lang else 3
     model = build_policy(m_cfg["name"], m_cfg["d_model"], m_cfg["layers"],
-                         m_cfg.get("heads", 8)).to(device)
+                         m_cfg.get("heads", 8), n_tokens=n_tokens).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"policy[{m_cfg['name']}] params: {n_params/1e6:.2f}M "
           f"(d{m_cfg['d_model']}/L{m_cfg['layers']}/H{m_cfg.get('heads', 8)})")
     opt = torch.optim.Adam(model.parameters(), lr=t_cfg["lr"],
                            betas=tuple(t_cfg.get("adam_betas", (0.9, 0.999))))
 
+    L_tr_t = torch.tensor(L_tr) if use_lang else torch.zeros(len(Cp_tr), 0)
     loader = DataLoader(
         TensorDataset(torch.tensor(Zp_tr), torch.tensor(Zc_tr),
                       torch.tensor(Zn_tr), torch.tensor(Cp_tr),
-                      torch.tensor(Cf_tr)),
+                      torch.tensor(Cf_tr), L_tr_t),
         batch_size=t_cfg["batch_size"], shuffle=True)
     val_t = [torch.tensor(x, device=device) for x in (Zp_va, Zc_va, Zn_va)] \
-        + [Ae_va.to(device), torch.tensor(Cf_va, device=device)]
+        + [Ae_va.to(device), torch.tensor(Cf_va, device=device)] \
+        + [torch.tensor(L_va, device=device) if use_lang
+           else torch.zeros(len(Cf_va), 0, device=device)]
     epochs = 3 if args.smoke else t_cfg["epochs"]
     best_val, best_state, patience = np.inf, None, 0
 
@@ -158,26 +174,26 @@ def main():
             return 0.5 * (1 + np.cos(np.pi * min(prog, 1.0)))
         sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    def forward(zp, zc, zn, aemb, cf):
-        tokens = torch.stack([zp, zc, aemb], dim=1)   # (B, 3, 768)
-        zeta = model(tokens)
+    def forward(zp, zc, zn, aemb, cf, lang):
+        toks = [zp, zc, aemb] + ([lang] if use_lang else [])
+        zeta = model(torch.stack(toks, dim=1))        # (B, 3|4, 768)
         return policy_losses(zeta, cf, zc, zn, ae, w)
 
-    def forward_train(zp, zc, zn, cp, cf):
+    def forward_train(zp, zc, zn, cp, cf, lang):
         if past_noise > 0:                            # 폐루프 오차 누적 모사
             cp = cp + torch.randn_like(cp) * past_noise
         with torch.no_grad():
             aemb = ae.g(cp, zp)
-        return forward(zp, zc, zn, aemb, cf)
+        return forward(zp, zc, zn, aemb, cf, lang)
 
     t0 = time.time()
     for ep in range(epochs):
         model.train()
         logs, parts_log = [], []
-        for zp, zc, zn, cp, cf in loader:
+        for zp, zc, zn, cp, cf, lang in loader:
             loss, parts = forward_train(zp.to(device), zc.to(device),
                                         zn.to(device), cp.to(device),
-                                        cf.to(device))
+                                        cf.to(device), lang.to(device))
             opt.zero_grad(); loss.backward(); opt.step()
             if sched:
                 sched.step()
@@ -210,8 +226,8 @@ def main():
     # ---- 평가 ----
     model.eval()
     with torch.no_grad():
-        tokens = torch.stack([val_t[0], val_t[1], val_t[3]], dim=1)
-        zeta = model(tokens)
+        toks = [val_t[0], val_t[1], val_t[3]] + ([val_t[5]] if use_lang else [])
+        zeta = model(torch.stack(toks, dim=1))
         lat_target = ae.g(val_t[4], val_t[1])
         ahat = ae.h(zeta, val_t[1]).cpu().numpy()
     zeta_np = zeta.cpu().numpy()
@@ -224,9 +240,15 @@ def main():
     act_r2 = r2(Cf.reshape(len(Cf), -1), ahat.reshape(len(ahat), -1))
     gt = Cf * a_std + a_mean
     pr = ahat * a_std + a_mean
-    arm = [0,1,2,3,4,5,7,8,9,10,11,12]
-    mae_deg = float(np.abs(pr[:,:,arm]-gt[:,:,arm]).mean()*180/np.pi)
-    grip_acc = float(((pr[:,:,[6,13]]>0.5)==(gt[:,:,[6,13]]>0.5)).mean()*100)
+    # 액션 배열: aloha 14D(관절 rad, 그리퍼 [6,13]) / 그 외(예: LIBERO 7D — 마지막이 그리퍼)
+    if act_dim == 14:
+        arm = [0,1,2,3,4,5,7,8,9,10,11,12]
+        grip, g_thr, unit = [6, 13], 0.5, 180/np.pi   # deg 환산
+    else:
+        arm = list(range(act_dim - 1))
+        grip, g_thr, unit = [act_dim - 1], 0.0, 1.0   # 원단위
+    mae_deg = float(np.abs(pr[:,:,arm]-gt[:,:,arm]).mean()*unit)
+    grip_acc = float(((pr[:,:,grip]>g_thr)==(gt[:,:,grip]>g_thr)).mean()*100)
     # 평균붕괴 진단: 샘플별 오차의 변동계수 (높으면 특정 문맥에서 붕괴 의심)
     per_err = np.abs(pr[:,:,arm]-gt[:,:,arm]).mean(axis=(1,2))
     collapse_cv = float(per_err.std() / (per_err.mean() + 1e-9))

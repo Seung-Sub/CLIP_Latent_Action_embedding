@@ -23,7 +23,7 @@ import yaml
 from torch.utils.data import DataLoader, TensorDataset
 
 from core.clip_wrapper import ClipWrapper
-from data.act_sim import ActSimDataset
+from data import get_dataset
 from models.networks import DeltaAE
 
 WS = Path(__file__).resolve().parents[2]
@@ -77,7 +77,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # ---- 데이터 ----
-    ds = ActSimDataset(cfg)
+    ds = get_dataset(cfg)
     files = ds.episode_files()
     if args.smoke:
         files = files[:2]

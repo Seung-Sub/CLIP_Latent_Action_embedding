@@ -6,8 +6,8 @@
 성공 판정: 에피소드 중 최대 reward == task.max_reward (수집 스크립트와 동일 기준)
 
 사용 (clip env, MUJOCO_GL=egl 필요):
-  MUJOCO_GL=egl python src/eval/rollout_sim.py --task sim_transfer_cube --episodes 50
-  MUJOCO_GL=egl python src/eval/rollout_sim.py --task sim_insertion --episodes 50 --save-video 3
+  MUJOCO_GL=egl python src/eval_aloha/rollout_sim.py --task sim_transfer_cube --episodes 50
+  MUJOCO_GL=egl python src/eval_aloha/rollout_sim.py --task sim_insertion --episodes 50 --save-video 3
 """
 import sys
 from pathlib import Path
@@ -28,7 +28,7 @@ from PIL import Image
 
 from core.clip_wrapper import ClipWrapper
 from data.act_sim import ActSimDataset
-from eval.rollout_dataset import load_models
+from eval_aloha.rollout_dataset import load_models
 
 
 def make_env(task):

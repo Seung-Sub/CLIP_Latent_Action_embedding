@@ -6,8 +6,8 @@
 14차원(양팔 관절 12 + 그리퍼 2) 전부를 GT와 겹쳐 그린다.
 
 사용 (clip env):
-  python src/eval/rollout_dataset.py                       # val 첫 에피소드
-  python src/eval/rollout_dataset.py --episode 3 --task sim_insertion
+  python src/eval_aloha/rollout_dataset.py                       # val 첫 에피소드
+  python src/eval_aloha/rollout_dataset.py --episode 3 --task sim_insertion
 """
 import sys
 from pathlib import Path

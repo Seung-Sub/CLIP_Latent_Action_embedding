@@ -2,7 +2,8 @@
 
 frozen CLIP ViT-L/14 잠재공간에서 로봇 액션청크를 결합(Phase 1)하고,
 그 잠재공간 위에서 미래 액션청크를 추론하는 정책(Phase 2)을 학습·평가하는 워크스페이스.
-대상 작업: ALOHA 시뮬 양팔 조작 2종 — **transfer_cube**, **insertion** (50Hz, angle 단일 카메라).
+평가 트랙 2개: **ALOHA**(이 문서 — transfer_cube/insertion, 50Hz) ·
+**LIBERO**(→ README_libero.md — Franka 7D, 인간 데모, 언어 지시문). 공용층(core/models/training)은 동일.
 
 ## 모델 구조
 
@@ -53,13 +54,13 @@ python src/training/train_phase1.py                    # 설정: configs/phase1.
 python src/training/train_phase2.py                    # 설정: configs/phase2.yaml
 
 # 4. GT 데이터셋 평가 — 전체 시계열 추론이 GT 그래프를 따라가는지 (14관절 플롯)
-python src/eval/rollout_dataset.py --task sim_transfer_cube
-python src/eval/rollout_dataset.py --task sim_insertion
+python src/eval_aloha/rollout_dataset.py --task sim_transfer_cube
+python src/eval_aloha/rollout_dataset.py --task sim_insertion
 # → outputs/eval/rollout_dataset_*.png
 
 # 5. 시뮬레이션 평가 — 폐루프 실시간 추론 성공률
-MUJOCO_GL=egl python src/eval/rollout_sim.py --task sim_transfer_cube --episodes 50
-MUJOCO_GL=egl python src/eval/rollout_sim.py --task sim_insertion --episodes 50
+MUJOCO_GL=egl python src/eval_aloha/rollout_sim.py --task sim_transfer_cube --episodes 50
+MUJOCO_GL=egl python src/eval_aloha/rollout_sim.py --task sim_insertion --episodes 50
 #   옵션: --save-video 3 (앞 3편 mp4) / --onscreen (실시간 창) / --exec-horizon 8
 
 # → outputs/eval/rollout_*.txt, videos/
@@ -80,7 +81,8 @@ MUJOCO_GL=egl python src/eval/rollout_sim.py --task sim_insertion --episodes 50
 | `src/data` | act_sim HDF5 로더 — 임베딩 캐시, 학습쌍/삼중쌍 생성(경계 증강 포함) |
 | `src/models` | DeltaAE(g/h), 정책 f(mlp/cls/pma) + 손실 |
 | `src/training` | train_phase1.py / train_phase2.py |
-| `src/eval` | rollout_dataset.py(GT 시계열 추론 그래프) / rollout_sim.py(폐루프 성공률) |
+| `src/eval_aloha` | ALOHA 평가: rollout_dataset.py(GT 그래프) / rollout_sim.py(폐루프 성공률) |
+| `src/eval_libero` | LIBERO 평가 (구현 예정) |
 | `aloha/` | ALOHA MuJoCo 환경(2작업 전용 경량화) + 수집·시각화 스크립트 |
 | `data/act_sim/` | 수집 데이터 (episode_N.hdf5: angle 이미지 + qpos + action, 50Hz) |
 | `checkpoints/` | phase1_delta_ae.pt / phase2_policy.pt (확정 모델) |
