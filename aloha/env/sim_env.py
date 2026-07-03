@@ -35,29 +35,17 @@ def make_sim_env(task_name, xml_path_override=None):
                                         right_gripper_qvel (1)]     # normalized gripper velocity (pos: opening, neg: closing)
                         "images": {"main": (480x640x3)}        # h, w, c, dtype='uint8'
     """
-    is_3d = '3d' in task_name
     if 'sim_transfer_cube' in task_name:
-        suffix = '_3d' if is_3d else ''
-        xml_path = xml_path_override or os.path.join(XML_DIR, f'bimanual_viperx_transfer_cube{suffix}.xml')
-        physics = mujoco.Physics.from_xml_path(xml_path)
-        task = TransferCubeTask3D(random=False) if is_3d else TransferCubeTask(random=False)
-        env = control.Environment(physics, task, time_limit=20, control_timestep=DT,
-                                  n_sub_steps=None, flat_observation=False)
+        xml_path = xml_path_override or os.path.join(XML_DIR, 'bimanual_viperx_transfer_cube.xml')
+        task = TransferCubeTask(random=False)
     elif 'sim_insertion' in task_name:
-        suffix = '_3d' if is_3d else ''
-        xml_path = xml_path_override or os.path.join(XML_DIR, f'bimanual_viperx_insertion{suffix}.xml')
-        physics = mujoco.Physics.from_xml_path(xml_path)
-        task = InsertionTask3D(random=False) if is_3d else InsertionTask(random=False)
-        env = control.Environment(physics, task, time_limit=20, control_timestep=DT,
-                                  n_sub_steps=None, flat_observation=False)
-    elif 'cube_classification' in task_name:
-        xml_path = xml_path_override or os.path.join(XML_DIR, 'bimanual_viperx_cube_classification.xml')
-        physics = mujoco.Physics.from_xml_path(xml_path)
-        task = CubeClassificationTask(random=False)
-        env = control.Environment(physics, task, time_limit=36, control_timestep=DT,
-                                  n_sub_steps=None, flat_observation=False)
+        xml_path = xml_path_override or os.path.join(XML_DIR, 'bimanual_viperx_insertion.xml')
+        task = InsertionTask(random=False)
     else:
-        raise NotImplementedError
+        raise NotImplementedError(task_name)
+    physics = mujoco.Physics.from_xml_path(xml_path)
+    env = control.Environment(physics, task, time_limit=20, control_timestep=DT,
+                              n_sub_steps=None, flat_observation=False)
     return env
 
 class BimanualViperXTask(base.Task):
@@ -116,15 +104,8 @@ class BimanualViperXTask(base.Task):
         obs['qvel'] = self.get_qvel(physics)
         obs['env_state'] = self.get_env_state(physics)
         obs['images'] = dict()
-        obs['images']['top'] = physics.render(height=480, width=640, camera_id='top')
         obs['images']['angle'] = physics.render(height=480, width=640, camera_id='angle')
-        obs['images']['angle_down'] = physics.render(height=480, width=640, camera_id='angle_down')
-        obs['images']['vis'] = physics.render(height=480, width=640, camera_id='front_close')
 
-        obs['images']['left_pillar'] = physics.render(height=480, width=640, camera_id='left_pillar')
-        obs['images']['right_pillar'] = physics.render(height=480, width=640, camera_id='right_pillar')
-        obs['images']['left_wrist'] = physics.render(height=480, width=640, camera_id='left_wrist')
-        obs['images']['right_wrist'] = physics.render(height=480, width=640, camera_id='right_wrist')
 
         return obs
 
@@ -242,155 +223,3 @@ class InsertionTask(BimanualViperXTask):
         if pin_touched: # successful insertion
             reward = 4
         return reward
-
-
-class CubeClassificationTask(BimanualViperXTask):
-    """Color-sort with adaptive handover.
-
-    qpos layout: [robot(16)] [red(7)] [blue(7)] = 30.
-
-    Reward 단계 (max=4, sticky 진행도):
-        0 = 어느 그리퍼도 자기 색깔 cube를 터치한 적 없음.
-        1 = 한 cube만 올바른 그리퍼가 터치한 적 있음.
-        2 = 두 cube 모두 올바른 그리퍼가 터치한 적 있음 (아직 plate에 안 올림).
-        3 = 한 cube가 자기 색깔 plate에 올라간 적 있음 (다른 cube는 placed 안 됨).
-        4 = 두 cube 모두 자기 색깔 plate에 올라간 적 있음.
-
-    "터치"는 약속된 그리퍼 ↔ cube contact (red ↔ left_gripper_finger, blue ↔ right). sticky.
-    "올라감"은 cube ↔ goal_geom contact. sticky (한 번 안착하면 상위 단계 유지).
-    """
-
-    def __init__(self, random=None):
-        super().__init__(random=random)
-        self.max_reward = 4
-        self._red_touched = False
-        self._blue_touched = False
-        self._red_placed = False
-        self._blue_placed = False
-
-    def initialize_episode(self, physics):
-        # Reset robot + qpos[-14:] from BOX_POSE (set by record_sim_episodes from EE phase).
-        with physics.reset_context():
-            physics.named.data.qpos[:16] = START_ARM_POSE
-            np.copyto(physics.data.ctrl, START_ARM_POSE)
-            assert BOX_POSE[0] is not None
-            physics.named.data.qpos[-14:] = BOX_POSE[0]
-        self._red_touched = False
-        self._blue_touched = False
-        self._red_placed = False
-        self._blue_placed = False
-        super().initialize_episode(physics)
-
-    @staticmethod
-    def get_env_state(physics):
-        env_state = physics.data.qpos.copy()[16:]
-        return env_state
-
-    def get_reward(self, physics):
-        all_contact_pairs = []
-        for i_contact in range(physics.data.ncon):
-            id1 = physics.data.contact[i_contact].geom1
-            id2 = physics.data.contact[i_contact].geom2
-            n1 = physics.model.id2name(id1, 'geom')
-            n2 = physics.model.id2name(id2, 'geom')
-            all_contact_pairs.append((n1, n2))
-            all_contact_pairs.append((n2, n1))
-
-        if ("red_box", "vx300s_left/10_left_gripper_finger") in all_contact_pairs:
-            self._red_touched = True
-        if ("blue_box", "vx300s_right/10_right_gripper_finger") in all_contact_pairs:
-            self._blue_touched = True
-        if ("red_box", "red_goal_geom") in all_contact_pairs:
-            self._red_placed = True
-        if ("blue_box", "blue_goal_geom") in all_contact_pairs:
-            self._blue_placed = True
-
-        placed_count  = int(self._red_placed)  + int(self._blue_placed)
-        touched_count = int(self._red_touched) + int(self._blue_touched)
-
-        if placed_count == 2:
-            return 4
-        if placed_count == 1:
-            return 3
-        if touched_count == 2:
-            return 2
-        if touched_count == 1:
-            return 1
-        return 0
-
-
-class TransferCubeTask3D(TransferCubeTask):
-    """Transfer cube task with 3D spawning (Z elevation + Z rotation + platform).
-    qpos layout is identical to 2D: [robot(16)] [box(7)] = 23.
-    Platform is a static body positioned via physics.model.body_pos."""
-    def initialize_episode(self, physics):
-        # Parent sets robot qpos + BOX_POSE[0] into qpos[-7:] — works as-is
-        super().initialize_episode(physics)
-        # Position static platform under the box
-        from utils.utils import position_platform
-        box_xyz = physics.data.qpos[-7:-4]
-        position_platform(physics, 'cube_platform', box_xyz, object_half_height=0.02)
-
-
-class InsertionTask3D(InsertionTask):
-    """Insertion task with 3D spawning (Z elevation + Z rotation + platforms).
-    qpos layout is identical to 2D: [robot(16)] [peg(7)] [socket(7)] = 30.
-    Platforms are static bodies positioned via physics.model.body_pos."""
-    def initialize_episode(self, physics):
-        # Parent sets robot qpos + BOX_POSE[0] into qpos[-14:] — works as-is
-        super().initialize_episode(physics)
-        # Position static platforms under objects
-        from utils.utils import position_platform
-        peg_xyz = physics.data.qpos[-14:-11]
-        socket_xyz = physics.data.qpos[-7:-4]
-        position_platform(physics, 'peg_platform', peg_xyz, object_half_height=0.01)
-        position_platform(physics, 'socket_platform', socket_xyz, object_half_height=0.018)
-
-
-def get_action(master_bot_left, master_bot_right):
-    action = np.zeros(14)
-    # arm action
-    action[:6] = master_bot_left.dxl.joint_states.position[:6]
-    action[7:7+6] = master_bot_right.dxl.joint_states.position[:6]
-    # gripper action
-    left_gripper_pos = master_bot_left.dxl.joint_states.position[7]
-    right_gripper_pos = master_bot_right.dxl.joint_states.position[7]
-    normalized_left_pos = MASTER_GRIPPER_POSITION_NORMALIZE_FN(left_gripper_pos)
-    normalized_right_pos = MASTER_GRIPPER_POSITION_NORMALIZE_FN(right_gripper_pos)
-    action[6] = normalized_left_pos
-    action[7+6] = normalized_right_pos
-    return action
-
-def test_sim_teleop():
-    """ Testing teleoperation in sim with ALOHA. Requires hardware and ALOHA repo to work. """
-    from interbotix_xs_modules.arm import InterbotixManipulatorXS
-
-    BOX_POSE[0] = [0.2, 0.5, 0.05, 1, 0, 0, 0]
-
-    # source of data
-    master_bot_left = InterbotixManipulatorXS(robot_model="wx250s", group_name="arm", gripper_name="gripper",
-                                              robot_name=f'master_left', init_node=True)
-    master_bot_right = InterbotixManipulatorXS(robot_model="wx250s", group_name="arm", gripper_name="gripper",
-                                              robot_name=f'master_right', init_node=False)
-
-    # setup the environment
-    env = make_sim_env('sim_transfer_cube')
-    ts = env.reset()
-    episode = [ts]
-    # setup plotting
-    ax = plt.subplot()
-    plt_img = ax.imshow(ts.observation['images']['angle'])
-    plt.ion()
-
-    for t in range(1000):
-        action = get_action(master_bot_left, master_bot_right)
-        ts = env.step(action)
-        episode.append(ts)
-
-        plt_img.set_data(ts.observation['images']['angle'])
-        plt.pause(0.02)
-
-
-if __name__ == '__main__':
-    test_sim_teleop()
-

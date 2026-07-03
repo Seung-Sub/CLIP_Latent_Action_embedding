@@ -82,7 +82,9 @@ def main():
     if args.smoke:
         files = files[:2]
     perm = rng.permutation(len(files))
-    n_val = 1 if args.smoke else cfg["data"]["val_episodes"]
+    v = cfg["data"]["val_episodes"]
+    # 1 미만이면 비율(예: 0.2 = 20%), 이상이면 개수
+    n_val = 1 if args.smoke else (max(1, round(len(files) * v)) if v < 1 else int(v))
     val_ids, tr_ids = perm[:n_val], perm[n_val:]
     print(f"episodes: train {len(tr_ids)} / val {len(val_ids)}")
 
@@ -111,32 +113,9 @@ def main():
 
     C_tr, C_va = norm_chunks(A_tr), norm_chunks(A_va)
     D_tr, D_va = Ztn_tr - Zt_tr, Ztn_va - Zt_va
-    # g의 정렬 타깃: delta(z'−z, 기본) | absolute(z' 자체)
-    if cfg["loss"].get("align_target", "delta") == "absolute":
-        T_tr, T_va = Ztn_tr, Ztn_va
-    else:
-        T_tr, T_va = D_tr, D_va
-    # 디코더 입력 표현: pooled(기본) = Δz 그대로 / patchgrid = Δ(4x4x1024)
-    repr_type = cfg["data"].get("repr", "pooled")
-    if repr_type == "patchgrid":
-        pd = ds.build_patch_deltas(clip, files)
-        Ddec_tr = np.concatenate([pd[i] for i in tr_ids])
-        Ddec_va = np.concatenate([pd[i] for i in val_ids])
-    else:
-        Ddec_tr, Ddec_va = D_tr, D_va
-    delta_dim = Ddec_tr.shape[1]
-    # proprioception: 조건 입력 = z_t ⊕ ee_pose(t) 정규화
-    if m_cfg.get("proprio", False):
-        pp = ds.build_proprio(files)
-        S_tr = np.concatenate([pp[i] for i in tr_ids])
-        S_va = np.concatenate([pp[i] for i in val_ids])
-        s_mean, s_std = S_tr.mean(0), np.maximum(S_tr.std(0), 1e-6)
-        S_tr = ((S_tr - s_mean) / s_std).astype(np.float32)
-        S_va = ((S_va - s_mean) / s_std).astype(np.float32)
-        Zt_tr = np.concatenate([Zt_tr, S_tr], axis=1)
-        Zt_va = np.concatenate([Zt_va, S_va], axis=1)
-    print(f"pairs: train {len(C_tr)} / val {len(C_va)} | chunk {n_chunk}x{act_dim} "
-          f"| repr {repr_type}({delta_dim}d)")
+    T_tr, T_va = D_tr, D_va
+    Ddec_tr, Ddec_va = D_tr, D_va
+    print(f"pairs: train {len(C_tr)} / val {len(C_va)} | chunk {n_chunk}x{act_dim}")
 
     # ---- wandb ----
     wb = None
@@ -149,11 +128,7 @@ def main():
     # ---- 모델/학습 ----
     model = DeltaAE(act_dim, n_chunk, m_cfg["latent_dim"], m_cfg["hidden"],
                     m_cfg["layers"], m_cfg["dropout"],
-                    m_cfg.get("state_cond", False),
-                    delta_dim=delta_dim,
-                    cond_dim=Zt_tr.shape[1],
-                    enc_state_cond=m_cfg.get("enc_state_cond"),
-                    dec_state_cond=m_cfg.get("dec_state_cond")).to(device)
+                    m_cfg.get("state_cond", True)).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"DeltaAE params: {n_params/1e6:.2f}M (encoder cnn/{m_cfg['hidden']}x"
           f"{m_cfg['layers']}, decoder mlp/{m_cfg['hidden']}x{m_cfg['layers']})")
@@ -163,12 +138,11 @@ def main():
     # DataLoader: shuffle=True -> 매 epoch 전체 시점을 랜덤 순서로 배치 구성
     loader = DataLoader(
         TensorDataset(torch.tensor(C_tr), torch.tensor(T_tr),
-                      torch.tensor(Zt_tr), torch.tensor(Ddec_tr)),
+                      torch.tensor(Zt_tr)),
         batch_size=t_cfg["batch_size"], shuffle=True, drop_last=False)
     Cv = torch.tensor(C_va, device=device)
     Dv = torch.tensor(T_va, device=device)
     Zv = torch.tensor(Zt_va, device=device)
-    DDv = torch.tensor(Ddec_va, device=device)
     epochs = 3 if args.smoke else t_cfg["epochs"]
     best_val, best_state, patience = np.inf, None, 0
 
@@ -189,16 +163,16 @@ def main():
     for ep in range(epochs):
         model.train()
         logs, part_logs = [], []
-        for chunk_b, delta_b, zt_b, ddec_b in loader:
+        for chunk_b, delta_b, zt_b in loader:
             loss, parts = model.losses(chunk_b.to(device), delta_b.to(device),
-                                       w, zt_b.to(device), ddec_b.to(device))
+                                       w, zt_b.to(device))
             opt.zero_grad(); loss.backward(); opt.step()
             if sched:
                 sched.step()
             logs.append(loss.item()); part_logs.append(parts)
         model.eval()
         with torch.no_grad():
-            val_loss, val_parts = model.losses(Cv, Dv, w, Zv, DDv)
+            val_loss, val_parts = model.losses(Cv, Dv, w, Zv)
         val_loss = val_loss.item()
         if val_loss < best_val - 1e-5:
             best_val, patience = val_loss, 0
@@ -226,9 +200,8 @@ def main():
     model.eval()
     with torch.no_grad():
         ghat = model.g(Cv, Zv).cpu().numpy()
-        ahat = model.h(DDv, Zv).cpu().numpy().reshape(len(Cv), -1)
-        acyc = model.h(model.g2dec(model.g(Cv, Zv)), Zv
-                       ).cpu().numpy().reshape(len(Cv), -1)
+        ahat = model.h(Dv, Zv).cpu().numpy().reshape(len(Cv), -1)
+        acyc = model.h(model.g(Cv, Zv), Zv).cpu().numpy().reshape(len(Cv), -1)
     Cva = C_va.reshape(len(C_va), -1)
     dec_r2, cyc_r2 = r2(Cva, ahat), r2(Cva, acyc)
     # 맵핑 정렬도: g(a)와 실제 Δz의 평균 cosine

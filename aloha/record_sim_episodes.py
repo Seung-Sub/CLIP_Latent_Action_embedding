@@ -27,7 +27,6 @@ import multiprocessing as mp
 
 from utils.constants import SIM_TASK_CONFIGS, DATA_DIR
 from utils.utils import sample_box_pose, sample_insertion_pose
-from utils.utils import sample_box_pose_3d, sample_insertion_pose_3d
 
 import IPython
 e = IPython.embed
@@ -38,8 +37,7 @@ MAX_RETRIES = 30
 def record_worker(worker_id, task_name, dataset_dir, episode_indices,
                   camera_names, episode_len,
                   policy_cls_name, onscreen_render, render_cam_name,
-                  action_noise_scale=0.0, base_seed=0, force_config=None,
-                  max_retries=None):
+                  action_noise_scale=0.0, base_seed=0, max_retries=None):
     """단일 워커: 할당된 에피소드를 순차 녹화. 실패 시 재시도하여 성공만 저장."""
     if onscreen_render:
         import matplotlib.pyplot as plt
@@ -49,16 +47,8 @@ def record_worker(worker_id, task_name, dataset_dir, episode_indices,
 
     if policy_cls_name == 'PickAndTransferPolicy':
         from env.scripted_policy import PickAndTransferPolicy as policy_cls
-    elif policy_cls_name == 'PickAndTransferPolicy3D':
-        from env.scripted_policy import PickAndTransferPolicy3D as policy_cls
-    elif policy_cls_name == 'InsertionPolicy3D':
-        from env.scripted_policy import InsertionPolicy3D as policy_cls
-    elif policy_cls_name == 'CubeClassificationPolicy':
-        from env.scripted_policy import CubeClassificationPolicy as policy_cls
     else:
         from env.scripted_policy import InsertionPolicy as policy_cls
-
-    is_3d = '3d' in task_name
 
     inject_noise = False
     retries = max_retries if max_retries is not None else MAX_RETRIES
@@ -74,8 +64,6 @@ def record_worker(worker_id, task_name, dataset_dir, episode_indices,
 
             # --- Phase 1: EE space scripted policy rollout ---
             env = make_ee_sim_env(task_name)
-            if force_config is not None and hasattr(env.task, 'force_config'):
-                env.task.force_config = force_config
             ts = env.reset()
             episode = [ts]
             policy = policy_cls(inject_noise)
@@ -105,7 +93,7 @@ def record_worker(worker_id, task_name, dataset_dir, episode_indices,
             episode_max_reward = np.max([ts.reward for ts in episode[1:]])
             episode_final_reward = episode[-1].reward
 
-            if ('sim_transfer_cube' in task_name or 'cube_classification' in task_name) \
+            if 'sim_transfer_cube' in task_name \
                and episode_max_reward == env.task.max_reward and episode_final_reward != env.task.max_reward:
                 episode_max_reward -= 1
 
@@ -253,11 +241,6 @@ def main(args):
     action_noise_scale = args['action_noise_scale']
     start_idx = args.get('start_idx', 0)
 
-    # --env_3d: task_name에 _3d 삽입 (sim_transfer_cube_record → sim_transfer_cube_3d_record)
-    if args.get('env_3d'):
-        task_name = task_name.replace('_record', '_3d_record')
-    is_3d = '3d' in task_name
-
     # onscreen_render는 반드시 단일 워커
     if onscreen_render and num_workers > 1:
         print(f'[INFO] --onscreen_render 사용 → num_workers를 1로 변경')
@@ -269,14 +252,8 @@ def main(args):
         matplotlib.use('Agg')
 
     # task 설정
-    if 'cube_classification' in task_name:
-        policy_cls_name = 'CubeClassificationPolicy'
-    elif is_3d and 'transfer' in task_name:
-        policy_cls_name = 'PickAndTransferPolicy3D'
-    elif 'transfer' in task_name:
+    if 'transfer' in task_name:
         policy_cls_name = 'PickAndTransferPolicy'
-    elif is_3d and 'insertion' in task_name:
-        policy_cls_name = 'InsertionPolicy3D'
     else:
         policy_cls_name = 'InsertionPolicy'
 
@@ -311,7 +288,6 @@ def main(args):
 
     t_start = time.time()
 
-    force_config = args.get('force_config')
     max_retries = args.get('max_retries')
 
     if num_workers == 1:
@@ -319,7 +295,7 @@ def main(args):
             0, task_name, dataset_dir, list(range(start_idx, start_idx + num_episodes)),
             camera_names, episode_len,
             policy_cls_name, onscreen_render, render_cam_name,
-            action_noise_scale, base_seed, force_config, max_retries)
+            action_noise_scale, base_seed, max_retries)
     else:
         pool = mp.Pool(processes=num_workers)
         results = []
@@ -330,7 +306,7 @@ def main(args):
                                  (w, task_name, dataset_dir, chunks[w],
                                   camera_names, episode_len,
                                   policy_cls_name, False, render_cam_name,
-                                  action_noise_scale, base_seed, force_config, max_retries))
+                                  action_noise_scale, base_seed, max_retries))
             results.append(r)
         pool.close()
         pool.join()
@@ -398,16 +374,10 @@ if __name__ == '__main__':
   python3 record_sim_episodes.py --task_name sim_insertion_record --dataset_dir /path/to/data --onscreen_render --num_episodes 3
 """)
     parser.add_argument('--task_name', type=str, default='sim_transfer_cube_record',
-                        choices=['sim_transfer_cube_record', 'sim_insertion_record',
-                                 'sim_cube_classification_record'],
+                        choices=['sim_transfer_cube_record', 'sim_insertion_record'],
                         help='작업 종류 (default: sim_transfer_cube_record)')
-    parser.add_argument('--force_config', type=str, default=None,
-                        choices=[None, 'A', 'B', 'C', 'D'],
-                        help='cube_classification 전용: 스폰 구성 강제 (None=무작위)')
     parser.add_argument('--start_idx', type=int, default=0,
                         help='저장할 episode 번호 시작값 (default 0). e.g. --start_idx 30 --num_episodes 30 → episode_30~episode_59')
-    parser.add_argument('--env_3d', action='store_true',
-                        help='3D 환경 사용 (Z축 고도 + 회전 + 플랫폼)')
     parser.add_argument('--dataset_dir', type=str, required=True,
                         help='저장 경로')
     parser.add_argument('--num_episodes', type=int, default=50,

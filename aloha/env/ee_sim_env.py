@@ -9,8 +9,6 @@ from utils.constants import PUPPET_GRIPPER_POSITION_NORMALIZE_FN
 from utils.constants import PUPPET_GRIPPER_VELOCITY_NORMALIZE_FN
 
 from utils.utils import sample_box_pose, sample_insertion_pose
-from utils.utils import sample_box_pose_3d, sample_insertion_pose_3d, position_platform
-from utils.utils import sample_cube_classification_pose
 from dm_control import mujoco
 from dm_control.rl import control
 from dm_control.suite import base
@@ -37,30 +35,19 @@ def make_ee_sim_env(task_name):
                                         right_gripper_qvel (1)]     # normalized gripper velocity (pos: opening, neg: closing)
                         "images": {"main": (480x640x3)}        # h, w, c, dtype='uint8'
     """
-    is_3d = '3d' in task_name
     if 'sim_transfer_cube' in task_name:
-        suffix = '_3d' if is_3d else ''
-        xml_path = os.path.join(XML_DIR, f'bimanual_viperx_ee_transfer_cube{suffix}.xml')
-        physics = mujoco.Physics.from_xml_path(xml_path)
-        task = TransferCubeEETask3D(random=False) if is_3d else TransferCubeEETask(random=False)
-        env = control.Environment(physics, task, time_limit=20, control_timestep=DT,
-                                  n_sub_steps=None, flat_observation=False)
+        xml_path = os.path.join(XML_DIR, 'bimanual_viperx_ee_transfer_cube.xml')
+        task = TransferCubeEETask(random=False)
     elif 'sim_insertion' in task_name:
-        suffix = '_3d' if is_3d else ''
-        xml_path = os.path.join(XML_DIR, f'bimanual_viperx_ee_insertion{suffix}.xml')
-        physics = mujoco.Physics.from_xml_path(xml_path)
-        task = InsertionEETask3D(random=False) if is_3d else InsertionEETask(random=False)
-        env = control.Environment(physics, task, time_limit=20, control_timestep=DT,
-                                  n_sub_steps=None, flat_observation=False)
-    elif 'cube_classification' in task_name:
-        xml_path = os.path.join(XML_DIR, 'bimanual_viperx_ee_cube_classification.xml')
-        physics = mujoco.Physics.from_xml_path(xml_path)
-        task = CubeClassificationEETask(random=False)
-        env = control.Environment(physics, task, time_limit=36, control_timestep=DT,
-                                  n_sub_steps=None, flat_observation=False)
+        xml_path = os.path.join(XML_DIR, 'bimanual_viperx_ee_insertion.xml')
+        task = InsertionEETask(random=False)
     else:
-        raise NotImplementedError
+        raise NotImplementedError(task_name)
+    physics = mujoco.Physics.from_xml_path(xml_path)
+    env = control.Environment(physics, task, time_limit=20, control_timestep=DT,
+                              n_sub_steps=None, flat_observation=False)
     return env
+
 
 class BimanualViperXEETask(base.Task):
     def __init__(self, random=None):
@@ -167,15 +154,8 @@ class BimanualViperXEETask(base.Task):
         obs['qvel'] = self.get_qvel(physics)
         obs['env_state'] = self.get_env_state(physics)
         obs['images'] = dict()
-        obs['images']['top'] = physics.render(height=480, width=640, camera_id='top')
         obs['images']['angle'] = physics.render(height=480, width=640, camera_id='angle')
-        obs['images']['angle_down'] = physics.render(height=480, width=640, camera_id='angle_down')
-        obs['images']['vis'] = physics.render(height=480, width=640, camera_id='front_close')
 
-        obs['images']['left_pillar'] = physics.render(height=480, width=640, camera_id='left_pillar')
-        obs['images']['right_pillar'] = physics.render(height=480, width=640, camera_id='right_pillar')
-        obs['images']['left_wrist'] = physics.render(height=480, width=640, camera_id='left_wrist')
-        obs['images']['right_wrist'] = physics.render(height=480, width=640, camera_id='right_wrist')
 
 
         # used in scripted policy to obtain starting pose
@@ -305,130 +285,3 @@ class InsertionEETask(BimanualViperXEETask):
         if pin_touched: # successful insertion
             reward = 4
         return reward
-
-
-class TransferCubeEETask3D(TransferCubeEETask):
-    """EE transfer cube with 3D spawning (Z elevation + Z rotation + platform).
-    qpos layout is identical to 2D. Platform is a static body."""
-    def initialize_episode(self, physics):
-        self.initialize_robots(physics)
-        box_pose = sample_box_pose_3d()
-        box_start_idx = physics.model.name2id('red_box_joint', 'joint')
-        np.copyto(physics.data.qpos[box_start_idx : box_start_idx + 7], box_pose)
-        # Position static platform under the box
-        position_platform(physics, 'cube_platform', box_pose[:3], object_half_height=0.02)
-        super(TransferCubeEETask, self).initialize_episode(physics)
-
-    @staticmethod
-    def get_env_state(physics):
-        env_state = physics.data.qpos.copy()[16:]
-        return env_state
-
-
-class CubeClassificationEETask(BimanualViperXEETask):
-    """EE control for cube_classification task.
-
-    qpos layout: [robot(16)] [red_box(7)] [blue_box(7)] = 30.
-    Spawn config can be forced by setting `task.force_config = 'A'/'B'/'C'/'D'` before reset.
-
-    Reward 단계 (max=4, sticky 진행도):
-        0 = 어느 그리퍼도 자기 색 cube를 터치한 적 없음.
-        1 = 한 cube만 터치됨.
-        2 = 두 cube 모두 터치됨 (아직 plate 안 됨).
-        3 = 한 cube가 자기 색 plate에 안착한 적 있음.
-        4 = 두 cube 모두 자기 색 plate에 안착한 적 있음.
-    """
-    def __init__(self, random=None):
-        super().__init__(random=random)
-        self.max_reward = 4
-        self.force_config = None
-        self.last_config = None
-        self._red_touched = False
-        self._blue_touched = False
-        self._red_placed = False
-        self._blue_placed = False
-
-    def initialize_episode(self, physics):
-        self.initialize_robots(physics)
-        red_pose, blue_pose, cfg = sample_cube_classification_pose(force_config=self.force_config)
-        self.last_config = cfg
-
-        red_start = physics.model.name2id('red_box_joint', 'joint')
-        id2index = lambda j_id: 16 + (j_id - 16) * 7
-        red_idx = id2index(red_start)
-        blue_start = physics.model.name2id('blue_box_joint', 'joint')
-        blue_idx = id2index(blue_start)
-        np.copyto(physics.data.qpos[red_idx : red_idx + 7], red_pose)
-        np.copyto(physics.data.qpos[blue_idx : blue_idx + 7], blue_pose)
-
-        self._red_touched = False
-        self._blue_touched = False
-        self._red_placed = False
-        self._blue_placed = False
-        super().initialize_episode(physics)
-
-    @staticmethod
-    def get_env_state(physics):
-        env_state = physics.data.qpos.copy()[16:]
-        return env_state
-
-    def get_reward(self, physics):
-        all_contact_pairs = []
-        for i_contact in range(physics.data.ncon):
-            id1 = physics.data.contact[i_contact].geom1
-            id2 = physics.data.contact[i_contact].geom2
-            n1 = physics.model.id2name(id1, 'geom')
-            n2 = physics.model.id2name(id2, 'geom')
-            all_contact_pairs.append((n1, n2))
-            all_contact_pairs.append((n2, n1))
-
-        if ("red_box", "vx300s_left/10_left_gripper_finger") in all_contact_pairs:
-            self._red_touched = True
-        if ("blue_box", "vx300s_right/10_right_gripper_finger") in all_contact_pairs:
-            self._blue_touched = True
-        if ("red_box", "red_goal_geom") in all_contact_pairs:
-            self._red_placed = True
-        if ("blue_box", "blue_goal_geom") in all_contact_pairs:
-            self._blue_placed = True
-
-        placed_count  = int(self._red_placed)  + int(self._blue_placed)
-        touched_count = int(self._red_touched) + int(self._blue_touched)
-
-        if placed_count == 2:
-            return 4
-        if placed_count == 1:
-            return 3
-        if touched_count == 2:
-            return 2
-        if touched_count == 1:
-            return 1
-        return 0
-
-
-class InsertionEETask3D(InsertionEETask):
-    """EE insertion with 3D spawning (Z elevation + Z rotation + platforms).
-    qpos layout is identical to 2D. Platforms are static bodies."""
-    def initialize_episode(self, physics):
-        self.initialize_robots(physics)
-        peg_pose, socket_pose = sample_insertion_pose_3d()
-
-        id2index = lambda j_id: 16 + (j_id - 16) * 7
-
-        peg_start_id = physics.model.name2id('red_peg_joint', 'joint')
-        peg_start_idx = id2index(peg_start_id)
-        np.copyto(physics.data.qpos[peg_start_idx : peg_start_idx + 7], peg_pose)
-
-        socket_start_id = physics.model.name2id('blue_socket_joint', 'joint')
-        socket_start_idx = id2index(socket_start_id)
-        np.copyto(physics.data.qpos[socket_start_idx : socket_start_idx + 7], socket_pose)
-
-        # Position static platforms under objects
-        position_platform(physics, 'peg_platform', peg_pose[:3], object_half_height=0.01)
-        position_platform(physics, 'socket_platform', socket_pose[:3], object_half_height=0.018)
-
-        super(InsertionEETask, self).initialize_episode(physics)
-
-    @staticmethod
-    def get_env_state(physics):
-        env_state = physics.data.qpos.copy()[16:]
-        return env_state

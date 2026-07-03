@@ -65,19 +65,16 @@ def main():
     torch.manual_seed(t_cfg["seed"])
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # ---- phase1 동결 모델 (g/h/g2dec + 정규화 통계) ----
+    # ---- phase1 동결 모델 (g/h + 정규화 통계) ----
     ck = torch.load(os.path.expanduser(cfg["phase1_ckpt"]),
                     map_location="cpu", weights_only=False)
     p1 = ck["config"]
     n_chunk, act_dim = ck["n_chunk"], ck["action_dim"]
     a_mean, a_std = ck["a_mean"], ck["a_std"]
-    # 주의: 디코더 입력은 패치그리드 차원 — g2dec가 768→delta_dim 사영
-    delta_dim = ck["state_dict"]["g2dec.weight"].shape[0] \
-        if "g2dec.weight" in ck["state_dict"] else p1["model"]["latent_dim"]
     ae = DeltaAE(act_dim, n_chunk, p1["model"]["latent_dim"],
                  p1["model"]["hidden"], p1["model"]["layers"],
-                 p1["model"]["dropout"], p1["model"].get("state_cond", False),
-                 delta_dim=delta_dim).to(device)
+                 p1["model"]["dropout"],
+                 p1["model"].get("state_cond", True)).to(device)
     ae.load_state_dict(ck["state_dict"])
     ae.eval()
     for p in ae.parameters():
@@ -89,7 +86,9 @@ def main():
     if args.smoke:
         files = files[:2]
     perm = rng.permutation(len(files))
-    n_val = 1 if args.smoke else cfg["data"]["val_episodes"]
+    v = cfg["data"]["val_episodes"]
+    # 1 미만이면 비율(예: 0.2 = 20%), 이상이면 개수
+    n_val = 1 if args.smoke else (max(1, round(len(files) * v)) if v < 1 else int(v))
     val_ids, tr_ids = perm[:n_val], perm[n_val:]
     clip = ClipWrapper()
     print("삼중쌍 구성 중 (임베딩 캐시 재사용)...")
@@ -214,7 +213,7 @@ def main():
         tokens = torch.stack([val_t[0], val_t[1], val_t[3]], dim=1)
         zeta = model(tokens)
         lat_target = ae.g(val_t[4], val_t[1])
-        ahat = ae.h(ae.g2dec(zeta), val_t[1]).cpu().numpy()
+        ahat = ae.h(zeta, val_t[1]).cpu().numpy()
     zeta_np = zeta.cpu().numpy()
     lat_np = lat_target.cpu().numpy()
     wm_np = (val_t[2] - val_t[1]).cpu().numpy()

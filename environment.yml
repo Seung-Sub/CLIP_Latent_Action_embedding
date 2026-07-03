@@ -1,0 +1,33 @@
+# conda env "clip" — clip_ws 전체 파이프라인 (수집/phase1/phase2/GT평가/시뮬평가)
+#
+#   conda env create -f environment.yml
+#   conda activate clip
+#
+# 주의:
+# - RTX 5070 Ti(Blackwell, sm_120)는 CUDA 12.8 빌드 torch 필수 → 아래 extra-index-url
+# - 시뮬 실행 시 headless 렌더링: MUJOCO_GL=egl 환경변수 필요
+name: clip
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - --extra-index-url https://download.pytorch.org/whl/cu128
+      - torch                      # cu128 빌드 (Blackwell 지원)
+      - torchvision
+      - transformers               # CLIP ViT-L/14 로드
+      - huggingface_hub            # 모델 다운로드
+      - numpy
+      - scipy                      # (stackcup 계열 회전 변환 등)
+      - scikit-learn               # ridge 베이스라인
+      - h5py                       # 에피소드 HDF5
+      - pillow
+      - matplotlib                 # 평가 그래프, 실시간 뷰어
+      - opencv-python-headless     # 롤아웃 영상 저장, 에피소드 시각화
+      - pyyaml
+      - wandb                      # 학습 로깅
+      - dm_control                 # ALOHA MuJoCo 시뮬
+      - mujoco
+      - pyquaternion               # 스크립트 정책
+      - ipython                    # sim 코드 의존성

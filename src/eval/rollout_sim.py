@@ -1,11 +1,11 @@
 """시뮬레이션 폐루프 평가 — 실시간 추론으로 작업 수행, 성공률 측정.
 
-루프 (50Hz):
+루프 (50Hz, receding horizon):
   8스텝마다: angle 캠 렌더 → CLIP 인코딩 z_t → f(z_{t−16}, z_t, g(A_past)) → ζ̂
-             → h(g2dec(ζ̂), z_t) → 16스텝 액션 → 앞 8스텝 실행 (receding horizon)
+             → h(ζ̂, z_t) → 16스텝 액션 예측 → 앞 8스텝 실행 → 재예측
 성공 판정: 에피소드 중 최대 reward == task.max_reward (수집 스크립트와 동일 기준)
 
-사용 (clipx env, MUJOCO_GL=egl 필요):
+사용 (clip env, MUJOCO_GL=egl 필요):
   MUJOCO_GL=egl python src/eval/rollout_sim.py --task sim_transfer_cube --episodes 50
   MUJOCO_GL=egl python src/eval/rollout_sim.py --task sim_insertion --episodes 50 --save-video 3
 """
@@ -14,7 +14,7 @@ from pathlib import Path
 
 WS = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(WS / "src"))
-sys.path.insert(0, str(WS / "sim"))          # env/, utils/ (시뮬 환경)
+sys.path.insert(0, str(WS / "aloha"))          # env/, utils/ (시뮬 환경)
 
 import argparse
 import collections
@@ -28,7 +28,7 @@ from PIL import Image
 
 from core.clip_wrapper import ClipWrapper
 from data.act_sim import ActSimDataset
-from eval.eval_gt_trace import load_models
+from eval.rollout_dataset import load_models
 
 
 def make_env(task):
@@ -57,10 +57,6 @@ def main():
     ap.add_argument("--save-video", type=int, default=0, help="앞 N개 에피소드 mp4 저장")
     ap.add_argument("--onscreen", action="store_true",
                     help="실시간 창으로 롤아웃 표시 (데스크톱 세션 필요)")
-    ap.add_argument("--temporal-ensemble", action="store_true",
-                    help="ACT식: 매 스텝 예측 + 겹친 예측들의 지수가중 평균")
-    ap.add_argument("--te-m", type=float, default=0.1,
-                    help="ensemble 가중 exp(-m·age)")
     args = ap.parse_args()
 
     cfg = yaml.safe_load(open(args.config))
@@ -103,7 +99,7 @@ def main():
             zc = torch.tensor(z_cur[None], device=device)
             a_emb = ae.g(torch.tensor(past[None], device=device), zp)
             zeta = policy(torch.stack([zp, zc, a_emb], dim=1))
-            return ae.h(ae.g2dec(zeta), zc).cpu().numpy()[0] * a_std + a_mean
+            return ae.h(zeta, zc).cpu().numpy()[0] * a_std + a_mean
 
         def show(t):
             if ep < args.save_video:
@@ -116,42 +112,18 @@ def main():
                 plt.pause(0.001)
 
         with torch.no_grad():
-            if args.temporal_ensemble:
-                # ACT식: 매 스텝 예측, t를 덮는 과거 예측들을 exp(-m·age)로 가중평균
-                z_step = collections.deque([z_hist[-1]], maxlen=span + 1)  # 스텝별 z
-                table = np.zeros((args.max_steps + span, args.max_steps, act_dim))
-                mask = np.zeros((args.max_steps + span, args.max_steps), bool)
-                while t < args.max_steps:
-                    t0 = time.time()
-                    z_cur = z_step[-1]
-                    z_prev = z_step[0]                      # ≤16스텝 전 (초기 클램프)
-                    ahat = predict(z_prev, z_cur)
-                    table[t:t + span, t] = ahat
-                    mask[t:t + span, t] = True
-                    cand = table[t][mask[t]]                # t를 덮는 예측들
-                    ages = np.arange(len(cand))[::-1]       # 최신=0
-                    wgt = np.exp(-args.te_m * ages)
-                    action = (cand * wgt[:, None]).sum(0) / wgt.sum()
-                    infer_ms.append((time.time() - t0) * 1000)
-                    ts = env.step(action)
-                    past_actions.append(action.copy())
+            # receding horizon: 16 예측 → 앞 H 실행 → 재예측
+            while t < args.max_steps:
+                t0 = time.time()
+                ahat = predict(z_hist[0], z_hist[-1])
+                infer_ms.append((time.time() - t0) * 1000)
+                for k in range(min(H, args.max_steps - t)):
+                    ts = env.step(ahat[k])
+                    past_actions.append(ahat[k].copy())
                     max_reward = max(max_reward, ts.reward or 0)
                     show(t)
                     t += 1
-                    z_step.append(encode(ts))
-            else:
-                # receding horizon: 16 예측 → 앞 H 실행 → 재예측
-                while t < args.max_steps:
-                    t0 = time.time()
-                    ahat = predict(z_hist[0], z_hist[-1])
-                    infer_ms.append((time.time() - t0) * 1000)
-                    for k in range(min(H, args.max_steps - t)):
-                        ts = env.step(ahat[k])
-                        past_actions.append(ahat[k].copy())
-                        max_reward = max(max_reward, ts.reward or 0)
-                        show(t)
-                        t += 1
-                    z_hist.append(encode(ts))
+                z_hist.append(encode(ts))
         if viewer is not None:
             import matplotlib.pyplot as plt
             plt.close("all")

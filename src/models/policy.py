@@ -7,7 +7,7 @@
 
 손실 3항 (plan.md §Phase2):
   L = λ_lat·[MSE+0.5(1−cos)](ζ̂, g(A_fut, z_t))   # 주 잠재 GT (VITA L_FM 자리)
-    + λ_act·L1(h(g2dec(ζ̂), z_t), A_fut)          # action 손실 (FLD 대응)
+    + λ_act·L1(h(ζ̂, z_t), A_fut)          # action 손실 (FLD 대응)
     + λ_wm ·0.5(1−cos)(ζ̂, z_next − z_t)          # 보조: 미래 시각델타 (FLARE식)
 """
 import torch
@@ -86,14 +86,14 @@ def build_policy(name, d_model=512, layers=4, heads=8):
 
 
 def policy_losses(zeta, chunk_fut, z_cur, z_next, ae, w):
-    """3항 손실. ae = 동결된 DeltaAE (g, h, g2dec). chunk_fut (B,T,D) 정규화됨."""
+    """3항 손실. ae = 동결된 DeltaAE (g, h). chunk_fut (B,T,D) 정규화됨."""
     with torch.no_grad():
         lat_target = ae.g(chunk_fut, z_cur)               # 주 GT (동결 g)
     wm_target = z_next - z_cur
     cos = nn.functional.cosine_similarity
     l_lat = (nn.functional.mse_loss(zeta, lat_target)
              + 0.5 * (1 - cos(zeta, lat_target, dim=1)).mean())
-    ahat = ae.h(ae.g2dec(zeta), z_cur)                    # 동결 디코딩 경로
+    ahat = ae.h(zeta, z_cur)                              # 동결 디코딩 경로
     l_act = nn.functional.l1_loss(ahat, chunk_fut)
     l_wm = 0.5 * (1 - cos(zeta, wm_target, dim=1)).mean()
     total = w["lat"] * l_lat + w["act"] * l_act + w["wm"] * l_wm

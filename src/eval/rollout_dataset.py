@@ -5,9 +5,9 @@
   각 예측의 앞 8스텝을 이어붙여 전체 예측 궤적을 구성 (GT 이미지 사용 = 개루프 액션)
 14차원(양팔 관절 12 + 그리퍼 2) 전부를 GT와 겹쳐 그린다.
 
-사용 (clipx env):
-  python src/eval/eval_gt_trace.py                       # val 첫 에피소드
-  python src/eval/eval_gt_trace.py --episode 3 --task sim_insertion
+사용 (clip env):
+  python src/eval/rollout_dataset.py                       # val 첫 에피소드
+  python src/eval/rollout_dataset.py --episode 3 --task sim_insertion
 """
 import sys
 from pathlib import Path
@@ -46,11 +46,10 @@ def load_models(cfg, device):
     ck1 = torch.load(os.path.expanduser(cfg["phase1_ckpt"]),
                      map_location="cpu", weights_only=False)
     p1 = ck1["config"]
-    delta_dim = ck1["state_dict"]["g2dec.weight"].shape[0]
     ae = DeltaAE(ck1["action_dim"], ck1["n_chunk"], p1["model"]["latent_dim"],
                  p1["model"]["hidden"], p1["model"]["layers"],
-                 p1["model"]["dropout"], p1["model"].get("state_cond", False),
-                 delta_dim=delta_dim).to(device).eval()
+                 p1["model"]["dropout"],
+                 p1["model"].get("state_cond", True)).to(device).eval()
     ae.load_state_dict(ck1["state_dict"])
     ck2 = torch.load(os.path.expanduser(cfg["train"]["checkpoint"]),
                      map_location="cpu", weights_only=False)
@@ -81,11 +80,13 @@ def main():
     files = ds.episode_files()
     if args.episode is not None:
         path = Path(os.path.expanduser(
-            f"~/clipvp_ws/data/act_sim/{args.task}/episode_{args.episode}.hdf5"))
+            f"~/clip_ws/data/act_sim/{args.task}/episode_{args.episode}.hdf5"))
     else:
         rng = np.random.RandomState(cfg["train"]["seed"])
         perm = rng.permutation(len(files))
-        val_files = [files[i] for i in perm[:cfg["data"]["val_episodes"]]]
+        v = cfg["data"]["val_episodes"]
+        n_val = max(1, round(len(files) * v)) if v < 1 else int(v)
+        val_files = [files[i] for i in perm[:n_val]]
         path = next(p for p in val_files if args.task in str(p))
     print(f"에피소드: {path}")
 
@@ -107,7 +108,7 @@ def main():
             a_emb = ae.g(torch.tensor(past, device=device), z_prev)
             tokens = torch.stack([z_prev, z_cur, a_emb], dim=1)
             zeta = policy(tokens)
-            ahat = ae.h(ae.g2dec(zeta), z_cur).cpu().numpy()[0]        # (16, 14) 정규화
+            ahat = ae.h(zeta, z_cur).cpu().numpy()[0]                   # (16, 14) 정규화
             ahat = ahat * a_std + a_mean
             n_exec = min(H, T - t)
             # n_chunk(16) 예측을 실제 span 스텝에 대응 (여기선 1:1)
@@ -139,7 +140,7 @@ def main():
                  f"{H}스텝 receding)\n관절 MAE {mae_deg:.2f}° | 그리퍼 {grip_acc:.1f}%",
                  fontsize=12)
     fig.tight_layout()
-    out = WS / "outputs" / "eval" / f"gt_trace_{path.parent.name}_{path.stem}.png"
+    out = WS / "outputs" / "eval" / f"rollout_dataset_{path.parent.name}_{path.stem}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, bbox_inches="tight")
     print(f"저장: {out}")
