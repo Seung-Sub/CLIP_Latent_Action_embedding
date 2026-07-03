@@ -1,9 +1,9 @@
 # 데이터·모델·산출물은 커밋하지 않음 (재현 방법은 README 참조)
-data/
-checkpoints/
-outputs/
-wandb/
-docs/
+/data/
+/checkpoints/
+/outputs/
+/wandb/
+/docs/
 # 파이썬 잔재
 __pycache__/
 *.pyc
