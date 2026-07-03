@@ -1,0 +1,76 @@
+<mujoco>
+    <include file="scene.xml"/>
+    <include file="vx300s_dependencies.xml"/>
+
+    <asset>
+        <material name="blue_box_material"  rgba="0.15 0.15 0.95 1" shininess="1.0" specular="0.8"/>
+        <!-- Plate colors are deliberately offset from the cube colors so they
+             are distinguishable: red plate -> coral, blue plate -> teal. -->
+        <material name="red_goal_material"  rgba="0.95 0.55 0.30 0.7"/>
+        <material name="blue_goal_material" rgba="0.30 0.70 0.70 0.7"/>
+    </asset>
+
+    <equality>
+        <weld body1="mocap_left" body2="vx300s_left/gripper_link" solref="0.01 1" solimp="0.98 0.99 0.001" />
+        <weld body1="mocap_right" body2="vx300s_right/gripper_link" solref="0.01 1" solimp="0.98 0.99 0.001" />
+    </equality>
+
+    <contact>
+        <exclude body1="red_goal"  body2="table"/>
+        <exclude body1="blue_goal" body2="table"/>
+    </contact>
+
+    <worldbody>
+        <include file="vx300s_left.xml" />
+        <include file="vx300s_right.xml" />
+
+        <body mocap="true" name="mocap_left" pos="0.095 0.50 0.425">
+            <site pos="0 0 0" size="0.003 0.003 0.03" type="box" name="mocap_left_site1" rgba="1 0 0 0"/>
+            <site pos="0 0 0" size="0.003 0.03 0.003" type="box" name="mocap_left_site2" rgba="1 0 0 0"/>
+            <site pos="0 0 0" size="0.03 0.003 0.003" type="box" name="mocap_left_site3" rgba="1 0 0 0"/>
+        </body>
+        <body mocap="true" name="mocap_right" pos="-0.095 0.50 0.425">
+            <site pos="0 0 0" size="0.003 0.003 0.03" type="box" name="mocap_right_site1" rgba="1 0 0 0"/>
+            <site pos="0 0 0" size="0.003 0.03 0.003" type="box" name="mocap_right_site2" rgba="1 0 0 0"/>
+            <site pos="0 0 0" size="0.03 0.003 0.003" type="box" name="mocap_right_site3" rgba="1 0 0 0"/>
+        </body>
+
+        <body name="red_goal" pos="-0.10 0.30 0.0375">
+            <geom type="box" size="0.04 0.04 0.0075"
+                  name="red_goal_geom" friction="0.5 0.1 0.001"
+                  material="red_goal_material" />
+        </body>
+        <body name="blue_goal" pos="0.10 0.30 0.0375">
+            <geom type="box" size="0.04 0.04 0.0075"
+                  name="blue_goal_geom" friction="0.5 0.1 0.001"
+                  material="blue_goal_material" />
+        </body>
+
+        <body name="red_box" pos="-0.10 0.65 0.05">
+            <joint name="red_box_joint" type="free" frictionloss="0.01" />
+            <inertial pos="0 0 0" mass="0.05" diaginertia="0.002 0.002 0.002" />
+            <geom condim="4" solimp="0.99 0.99 0.001" solref="0.002 1" friction="4.0 0.1 0.002" pos="0 0 0" size="0.02 0.02 0.02" type="box" name="red_box" material="red_box_material" />
+        </body>
+
+        <body name="blue_box" pos="0.10 0.65 0.05">
+            <joint name="blue_box_joint" type="free" frictionloss="0.01" />
+            <inertial pos="0 0 0" mass="0.05" diaginertia="0.002 0.002 0.002" />
+            <geom condim="4" solimp="0.99 0.99 0.001" solref="0.002 1" friction="4.0 0.1 0.002" pos="0 0 0" size="0.02 0.02 0.02" type="box" name="blue_box" material="blue_box_material" />
+        </body>
+
+    </worldbody>
+
+    <actuator>
+        <position ctrllimited="true" ctrlrange="0.021 0.057" joint="vx300s_left/left_finger" kp="200"  user="1"/>
+        <position ctrllimited="true" ctrlrange="-0.057 -0.021" joint="vx300s_left/right_finger" kp="200"  user="1"/>
+
+        <position ctrllimited="true" ctrlrange="0.021 0.057" joint="vx300s_right/left_finger" kp="200"  user="1"/>
+        <position ctrllimited="true" ctrlrange="-0.057 -0.021" joint="vx300s_right/right_finger" kp="200"  user="1"/>
+
+    </actuator>
+
+    <keyframe>
+        <key qpos="0 -0.96 1.16 0 -0.3 0 0.024 -0.024  0 -0.96 1.16 0 -0.3 0 0.024 -0.024  -0.10 0.65 0.05 1 0 0 0  0.10 0.65 0.05 1 0 0 0"/>
+    </keyframe>
+
+</mujoco>

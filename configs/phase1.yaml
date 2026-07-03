@@ -1,0 +1,40 @@
+# Phase 1 — 액션청크 <-> CLIP 이미지델타(Δz) 결합 AE (확정 레시피, 400eps 검증: R² 0.985)
+data:
+  root:
+    - ~/clipvp_ws/data/act_sim/sim_transfer_cube
+    - ~/clipvp_ws/data/act_sim/sim_insertion
+  camera: angle                # 정면 3인칭 단일 카메라
+  chunk_sec: 0.32              # 50Hz × 16스텝
+  n_chunk: 16
+  repr: patchgrid              # 디코더 입력 = Δ패치그리드(4×4×1024)
+  val_episodes: 40             # 400 중 8:2
+  cache_dir: ~/clipvp_ws/outputs/cache/act_sim_emb
+
+model:
+  latent_dim: 768
+  hidden: 512
+  layers: 4
+  dropout: 0.2
+  state_cond: true             # g(a,z_t)/h(Δ,z_t) — 핵심 축
+  proprio: false
+
+loss:
+  align: 0.5                   # g(a)≈Δz (MSE+cos)
+  align_type: mse_cos
+  align_target: delta
+  temp: 0.1
+  recon: 0.5                   # h(Δ실제)≈a (L1, FLD 대응)
+  cycle: 0.25                  # h(g(a))≈a (L1) — phase2 디코딩 경로
+
+train:
+  batch_size: 256
+  lr: 1.0e-4
+  adam_betas: [0.95, 0.999]
+  scheduler: cosine
+  warmup_steps: 500
+  epochs: 50
+  early_stop_patience: 20
+  seed: 0
+  checkpoint: ~/clipvp_ws/checkpoints/phase1_delta_ae.pt
+
+wandb: {enabled: true, project: clipvp, mode: online, run_name: phase1}

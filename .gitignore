@@ -1,0 +1,15 @@
+# 데이터·모델·산출물은 커밋하지 않음 (재현 방법은 README 참조)
+data/
+checkpoints/
+outputs/
+wandb/
+
+# 파이썬 잔재
+__pycache__/
+*.pyc
+
+# 대용량 모델 파일 안전망
+*.pt
+*.pth
+*.hdf5
+*.npz
