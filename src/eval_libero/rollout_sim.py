@@ -27,6 +27,7 @@ import torch
 import yaml
 from PIL import Image
 
+from core import chunkrep
 from core.clip_wrapper import ClipWrapper
 from data.libero import LiberoDataset
 from eval_libero.rollout_dataset import load_models
@@ -51,7 +52,8 @@ def main():
 
     cfg = yaml.safe_load(open(args.config))
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    ae, policy, a_mean, a_std, n_chunk, act_dim, use_lang = load_models(cfg, device)
+    (ae, policy, a_mean, a_std, n_chunk, act_dim, use_lang,
+     repr_kind, wrist_cam) = load_models(cfg, device)
     ds = LiberoDataset(cfg)          # span/resample 재사용
     clip = ClipWrapper()
     span, H = ds.span, args.exec_horizon
@@ -80,6 +82,11 @@ def main():
         def encode(obs):
             return clip.encode_images([Image.fromarray(frame(obs))])["embeds"][0]
 
+        def encode_wrist(obs):
+            img = obs["robot0_eye_in_hand_image"]
+            img = img[::-1].copy() if args.flip else img
+            return clip.encode_images([Image.fromarray(img)])["embeds"][0]
+
         for ep in range(args.episodes):
             env.reset()
             obs = env.set_init_state(init_states[ep % len(init_states)])
@@ -95,12 +102,17 @@ def main():
                     t0 = time.time()
                     past = ds.resample_chunk(np.stack(past_actions))
                     past = ((past - a_mean) / a_std).astype(np.float32)
+                    past = chunkrep.to_repr(past, repr_kind)
                     zp = torch.tensor(z_hist[0][None], device=device)
                     zc = torch.tensor(z_hist[-1][None], device=device)
                     a_emb = ae.g(torch.tensor(past[None], device=device), zp)
-                    toks = [zp, zc, a_emb] + ([lang] if use_lang else [])
+                    toks = [zp, zc, a_emb] + ([lang] if use_lang else []) \
+                        + ([torch.tensor(encode_wrist(obs)[None], device=device)]
+                           if wrist_cam else [])
                     zeta = policy(torch.stack(toks, dim=1))
-                    ahat = ae.h(zeta, zc).cpu().numpy()[0] * a_std + a_mean
+                    ahat = chunkrep.from_repr(
+                        ae.h(zeta, zc).cpu().numpy()[0], repr_kind) \
+                        * a_std + a_mean
                     ahat = np.clip(ahat, -1.0, 1.0)
                     infer_ms.append((time.time() - t0) * 1000)
                     for k in range(min(H, args.max_steps - t)):

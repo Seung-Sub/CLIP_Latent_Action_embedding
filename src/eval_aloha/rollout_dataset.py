@@ -32,10 +32,11 @@ matplotlib.rcParams.update({"font.family": ["Noto Sans CJK KR", "sans-serif"],
                             "axes.unicode_minus": False})
 import matplotlib.pyplot as plt
 
+from core import chunkrep
 from core.clip_wrapper import ClipWrapper
 from data.act_sim import ActSimDataset
 from models.networks import DeltaAE
-from models.policy import build_policy
+from models.policy import build_policy_from_cfg
 
 WS = Path(__file__).resolve().parents[2]
 JOINT_NAMES = ([f"L{i}" for i in range(1, 7)] + ["L_grip"]
@@ -54,10 +55,10 @@ def load_models(cfg, device):
     ck2 = torch.load(os.path.expanduser(cfg["train"]["checkpoint"]),
                      map_location="cpu", weights_only=False)
     m = ck2["config"]["module"]
-    policy = build_policy(m["name"], m["d_model"], m["layers"],
-                          m.get("heads", 8)).to(device).eval()
+    policy = build_policy_from_cfg(m).to(device).eval()
     policy.load_state_dict(ck2["state_dict"])
-    return ae, policy, ck1["a_mean"], ck1["a_std"], ck1["n_chunk"], ck1["action_dim"]
+    return (ae, policy, ck1["a_mean"], ck1["a_std"], ck1["n_chunk"],
+            ck1["action_dim"], ck1.get("chunk_repr", "time"))
 
 
 def main():
@@ -72,7 +73,7 @@ def main():
 
     cfg = yaml.safe_load(open(args.config))
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    ae, policy, a_mean, a_std, n_chunk, act_dim = load_models(cfg, device)
+    ae, policy, a_mean, a_std, n_chunk, act_dim, repr_kind = load_models(cfg, device)
     ds = ActSimDataset(cfg)
     clip = ClipWrapper()
 
@@ -104,12 +105,13 @@ def main():
         while t + span <= T:
             z_prev = torch.tensor(Z[t - span][None], device=device)
             z_cur = torch.tensor(Z[t][None], device=device)
-            past = norm(ds.resample_chunk(acts[t - span:t]))[None]     # GT 과거 청크
+            past = chunkrep.to_repr(
+                norm(ds.resample_chunk(acts[t - span:t])), repr_kind)[None]
             a_emb = ae.g(torch.tensor(past, device=device), z_prev)
             tokens = torch.stack([z_prev, z_cur, a_emb], dim=1)
             zeta = policy(tokens)
-            ahat = ae.h(zeta, z_cur).cpu().numpy()[0]                   # (16, 14) 정규화
-            ahat = ahat * a_std + a_mean
+            ahat = ae.h(zeta, z_cur).cpu().numpy()[0]                   # (16, 14) repr
+            ahat = chunkrep.from_repr(ahat, repr_kind) * a_std + a_mean
             n_exec = min(H, T - t)
             # n_chunk(16) 예측을 실제 span 스텝에 대응 (여기선 1:1)
             pred[t:t + n_exec] = ahat[:n_exec]

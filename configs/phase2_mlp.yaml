@@ -1,0 +1,39 @@
+# Phase 2 (ALOHA) — 베이스라인: MLP-concat 회귀 (비교 실험용)
+# 100롤 실측: transfer 43% / insertion 28%. 기본(flow)은 configs/phase2.yaml.
+# phase1은 기본과 동일한 time 표현 체크포인트(phase1_delta_ae.pt) 공유.
+phase1_ckpt: ~/clip_ws/checkpoints/phase1_delta_ae.pt
+
+data:
+  root:
+    - ~/clip_ws/data/act_sim/sim_transfer_cube
+    - ~/clip_ws/data/act_sim/sim_insertion
+  camera: angle
+  chunk_sec: 0.32
+  n_chunk: 16
+  stride: 2
+  val_episodes: 0.2
+  cache_dir: ~/clip_ws/outputs/cache/act_sim_emb
+
+module:
+  name: mlp                    # 구 그리드 승자 (> cls > pma — 절제 이력)
+  d_model: 1024
+  layers: 4
+
+loss:
+  lat: 0.5
+  act: 1.0
+  wm: 0.0
+
+train:
+  batch_size: 256
+  lr: 1.0e-4
+  adam_betas: [0.95, 0.999]
+  scheduler: cosine
+  warmup_steps: 500
+  epochs: 50
+  early_stop_patience: 20
+  seed: 0
+  past_noise: 0.05
+  checkpoint: ~/clip_ws/checkpoints/phase2_policy.pt
+
+wandb: {enabled: true, project: clipvp, mode: online, run_name: phase2_aloha_mlp}

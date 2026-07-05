@@ -22,6 +22,7 @@ import torch
 import yaml
 from torch.utils.data import DataLoader, TensorDataset
 
+from core import chunkrep
 from core.clip_wrapper import ClipWrapper
 from data import get_dataset
 from models.networks import DeltaAE
@@ -111,7 +112,10 @@ def main():
         return ((A.reshape(len(A), n_chunk, act_dim) - a_mean) / a_std
                 ).astype(np.float32)
 
-    C_tr, C_va = norm_chunks(A_tr), norm_chunks(A_va)
+    # 청크 표현 (time | dct) — 정규화 후 적용, 체크포인트에 기록 (하류 전체가 따름)
+    repr_kind = cfg["data"].get("chunk_repr", "time")
+    C_tr = chunkrep.to_repr(norm_chunks(A_tr), repr_kind)
+    C_va = chunkrep.to_repr(norm_chunks(A_va), repr_kind)
     D_tr, D_va = Ztn_tr - Zt_tr, Ztn_va - Zt_va
     T_tr, T_va = D_tr, D_va
     Ddec_tr, Ddec_va = D_tr, D_va
@@ -228,6 +232,7 @@ def main():
     torch.save({"state_dict": best_state, "config": cfg,
                 "a_mean": a_mean, "a_std": a_std,
                 "action_dim": act_dim, "n_chunk": n_chunk,
+                "chunk_repr": repr_kind,
                 "metrics": metrics}, ckpt_path)
     print(f"저장: {ckpt_path}")
     if args.tag:  # 그리드서치용 지표 json
