@@ -134,6 +134,14 @@ MUJOCO_GL=egl python src/eval_libero/rollout_sim.py --suite libero_spatial --epi
 # 옵션: --task-id 0 (단일 태스크) / --save-video 2
 ```
 
+### B-6. 잠재공간 맵핑 시각화 (선택, 대화형 창)
+
+```bash
+python src/eval_libero/latent_mapping.py
+# phase1 잠재공간에 3인칭 전/후·Δz 화살표·g(액션청크) 화살표·그리퍼 델타·언어 cmd를
+# PCA 2D/3D로 표시. 우측에서 태스크/에피소드/시작 시점 선택, [전체 구성]·[3D]·[확대] 토글
+```
+
 다른 suite(object/goal)로 실험하려면 **config 사본에서 경로만 교체** 후 같은 절차 (예: object):
 
 ```bash
