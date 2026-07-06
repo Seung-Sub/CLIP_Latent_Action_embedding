@@ -31,6 +31,10 @@ class LiberoDataset:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.span = max(2, int(round(self.chunk_sec * HZ)))
         self.stride = max(1, self.span // 8)
+        # D1: OpenVLA식 no-op 필터 (‖a[:-1]‖<ε AND 그리퍼 명령 불변 스텝 제거, None=off)
+        # float 강제: yaml/--set 경유 시 "1e-4"가 str로 들어오는 경우 방지
+        eps = d.get("noop_filter_eps", None)
+        self.noop_eps = None if eps is None else float(eps)
 
     # ---------- 에피소드 열거: (파일, demo키) ----------
 
@@ -69,10 +73,22 @@ class LiberoDataset:
         name = re.sub(r"^[A-Z0-9_]+SCENE\d+_", "", name)
         return name.replace("_", " ")
 
-    # ---------- CLIP 임베딩 캐시 ----------
+    # ---------- 임베딩 캐시 (앵커별 분리: {anchor_id}/{projection}/{normalize}) ----------
+
+    def _cache_path(self, encoder, filename):
+        key = getattr(encoder, "cache_key", None)
+        if key is None:                                   # 구형 ClipWrapper 직접 사용
+            return self.cache_dir / filename
+        p = self.cache_dir / key / filename
+        legacy = self.cache_dir / filename
+        # 하위호환: 기본 앵커(기존 ClipWrapper와 동일 출력)는 기존 평면 캐시 재사용
+        if not p.exists() and key == "clip-vit-l-14/joint/norm" and legacy.exists():
+            return legacy
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return p
 
     def embeddings(self, clip, ep):
-        cache = self.cache_dir / (self._key(ep) + f"_{self.camera}.npz")
+        cache = self._cache_path(clip, self._key(ep) + f"_{self.camera}.npz")
         if cache.exists():
             return np.load(cache)["Z"]
         frames = [Image.fromarray(im) for im in self.load_frames(ep)]
@@ -85,12 +101,34 @@ class LiberoDataset:
 
     def instruction_embedding(self, clip, ep):
         path, _ = ep
-        cache = self.cache_dir / (path.stem + "_lang.npz")
+        cache = self._cache_path(clip, path.stem + "_lang.npz")
         if cache.exists():
             return np.load(cache)["L"]
         L = clip.encode_texts([self.instruction(ep)])["embeds"][0]
         np.savez_compressed(cache, L=L)
         return L
+
+    # ---------- no-op 필터 (검증 노트 §1: OpenVLA regenerate 스크립트 규칙) ----------
+
+    def keep_indices(self, acts):
+        """no-op이 아닌 스텝 인덱스. self.noop_eps=None이면 전체."""
+        if self.noop_eps is None:
+            return np.arange(len(acts))
+        norm = np.linalg.norm(acts[:, :-1], axis=1)
+        same_grip = np.zeros(len(acts), bool)
+        same_grip[1:] = acts[1:, -1] == acts[:-1, -1]    # 첫 스텝은 norm 기준만
+        noop = (norm < self.noop_eps) & same_grip
+        noop[0] = norm[0] < self.noop_eps
+        return np.where(~noop)[0]
+
+    def _filtered(self, clip, ep):
+        """(acts, Z) 동기 필터 — 프레임·액션 병렬 배열에서 no-op 스텝 동시 제거."""
+        acts = self.load_actions(ep)
+        Z = self.embeddings(clip, ep)
+        keep = self.keep_indices(acts)
+        if len(keep) < len(acts):
+            acts, Z = acts[keep], Z[keep]
+        return acts, Z
 
     # ---------- 학습 쌍 생성 (act_sim과 동일 수식) ----------
 
@@ -105,9 +143,8 @@ class LiberoDataset:
         files = files or self.episode_files()
         out = []
         for ep in files:
-            acts = self.load_actions(ep)
+            acts, Z = self._filtered(clip, ep)
             T = len(acts)
-            Z = self.embeddings(clip, ep)
             starts = list(range(0, T - self.span, self.stride))
             Zt = np.stack([Z[t] for t in starts])
             Ztn = np.stack([Z[t + self.span] for t in starts])
@@ -124,9 +161,8 @@ class LiberoDataset:
         files = files or self.episode_files()
         out = []
         for ep in files:
-            acts = self.load_actions(ep)
+            acts, Z = self._filtered(clip, ep)
             T = len(acts)
-            Z = self.embeddings(clip, ep)
             starts = list(range(0, T - self.span, stride))
 
             def past_seg(t):

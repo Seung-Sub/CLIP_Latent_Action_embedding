@@ -26,7 +26,7 @@ import torch
 import yaml
 from PIL import Image
 
-from core.clip_wrapper import ClipWrapper
+from core.anchor import get_anchor
 from data.act_sim import ActSimDataset
 from eval_aloha.rollout_dataset import load_models
 
@@ -63,7 +63,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     ae, policy, a_mean, a_std, n_chunk, act_dim = load_models(cfg, device)
     ds = ActSimDataset(cfg)          # span/resample 유틸 재사용
-    clip = ClipWrapper()
+    clip = get_anchor(cfg)
     env, reset = make_env(args.task)
     span, H = ds.span, args.exec_horizon
 

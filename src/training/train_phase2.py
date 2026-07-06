@@ -23,7 +23,7 @@ import torch
 import yaml
 from torch.utils.data import DataLoader, TensorDataset
 
-from core.clip_wrapper import ClipWrapper
+from core.anchor import get_anchor
 from data import get_dataset
 from models.networks import DeltaAE
 from models.policy import build_policy, policy_losses
@@ -42,7 +42,7 @@ def apply_override(cfg, kv):
     node = cfg
     parts = key.split(".")
     for p in parts[:-1]:
-        node = node[p]
+        node = node.setdefault(p, {})     # 없는 상위 키 생성 (예: anchor.projection)
     node[parts[-1]] = yaml.safe_load(val)
 
 
@@ -71,10 +71,12 @@ def main():
     p1 = ck["config"]
     n_chunk, act_dim = ck["n_chunk"], ck["action_dim"]
     a_mean, a_std = ck["a_mean"], ck["a_std"]
-    ae = DeltaAE(act_dim, n_chunk, p1["model"]["latent_dim"],
+    latent = ck.get("latent_dim", p1["model"]["latent_dim"])
+    ae = DeltaAE(act_dim, n_chunk, latent,
                  p1["model"]["hidden"], p1["model"]["layers"],
                  p1["model"]["dropout"],
-                 p1["model"].get("state_cond", True)).to(device)
+                 p1["model"].get("state_cond", True),
+                 align_mode=p1["model"].get("align_mode", "dz")).to(device)
     ae.load_state_dict(ck["state_dict"])
     ae.eval()
     for p in ae.parameters():
@@ -90,8 +92,12 @@ def main():
     # 1 미만이면 비율(예: 0.2 = 20%), 이상이면 개수
     n_val = 1 if args.smoke else (max(1, round(len(files) * v)) if v < 1 else int(v))
     val_ids, tr_ids = perm[:n_val], perm[n_val:]
-    clip = ClipWrapper()
-    print("삼중쌍 구성 중 (임베딩 캐시 재사용)...")
+    clip = get_anchor(cfg)
+    use_lang_pre = cfg["module"].get("lang_token", False)
+    if use_lang_pre and not clip.has_text:
+        raise SystemExit(f"anchor {clip.id}: has_text=False → lang_token 사용 불가 "
+                         "(L0 무언어 조건으로 실행하거나 언어 정렬 앵커 선택)")
+    print(f"anchor: {clip.cache_key} | 삼중쌍 구성 중 (임베딩 캐시 재사용)...")
     eps = ds.build_policy_samples(clip, files, stride=cfg["data"].get("stride", 2))
 
     def stack(ids):
@@ -142,7 +148,8 @@ def main():
     # ---- 정책 모델 ----
     n_tokens = 4 if use_lang else 3
     model = build_policy(m_cfg["name"], m_cfg["d_model"], m_cfg["layers"],
-                         m_cfg.get("heads", 8), n_tokens=n_tokens).to(device)
+                         m_cfg.get("heads", 8), n_tokens=n_tokens,
+                         latent=latent).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"policy[{m_cfg['name']}] params: {n_params/1e6:.2f}M "
           f"(d{m_cfg['d_model']}/L{m_cfg['layers']}/H{m_cfg.get('heads', 8)})")

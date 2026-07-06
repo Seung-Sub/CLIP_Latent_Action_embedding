@@ -13,34 +13,33 @@
 import torch
 import torch.nn as nn
 
-LATENT = 768
 
 
 class MLPConcat(nn.Module):
-    def __init__(self, d_model=512, layers=4, heads=None, n_tokens=3):
+    def __init__(self, d_model=512, layers=4, heads=None, n_tokens=3, latent=768):
         super().__init__()
-        dims = [n_tokens * LATENT] + [d_model] * (layers - 1)
+        dims = [n_tokens * latent] + [d_model] * (layers - 1)
         net = []
         for i in range(len(dims) - 1):
             net += [nn.Linear(dims[i], dims[i + 1]), nn.GELU()]
-        net.append(nn.Linear(dims[-1], LATENT))
-        self.net = nn.Sequential(nn.LayerNorm(n_tokens * LATENT), *net)
+        net.append(nn.Linear(dims[-1], latent))
+        self.net = nn.Sequential(nn.LayerNorm(n_tokens * latent), *net)
 
     def forward(self, tokens):                    # (B, 3, 768)
         return self.net(tokens.flatten(1))
 
 
 class CLSTransformer(nn.Module):
-    def __init__(self, d_model=512, layers=4, heads=8, n_tokens=3):
+    def __init__(self, d_model=512, layers=4, heads=8, n_tokens=3, latent=768):
         super().__init__()
-        self.proj = nn.Linear(LATENT, d_model)
+        self.proj = nn.Linear(latent, d_model)
         self.pos = nn.Parameter(torch.zeros(1, n_tokens + 1, d_model))
         self.cls = nn.Parameter(torch.zeros(1, 1, d_model))
         enc_layer = nn.TransformerEncoderLayer(
             d_model, heads, dim_feedforward=4 * d_model, activation="gelu",
             batch_first=True, norm_first=True)
         self.enc = nn.TransformerEncoder(enc_layer, layers)
-        self.out = nn.Linear(d_model, LATENT)
+        self.out = nn.Linear(d_model, latent)
 
     def forward(self, tokens):
         x = self.proj(tokens)                     # (B, 3, d)
@@ -52,9 +51,9 @@ class CLSTransformer(nn.Module):
 class PMAReadout(nn.Module):
     """학습형 query 1개 × key 3개 cross-attention 블록 (layers번 반복 정제)."""
 
-    def __init__(self, d_model=512, layers=2, heads=8, n_tokens=3):
+    def __init__(self, d_model=512, layers=2, heads=8, n_tokens=3, latent=768):
         super().__init__()
-        self.proj = nn.Linear(LATENT, d_model)
+        self.proj = nn.Linear(latent, d_model)
         self.query = nn.Parameter(torch.zeros(1, 1, d_model))
         self.blocks = nn.ModuleList()
         for _ in range(layers):
@@ -66,7 +65,7 @@ class PMAReadout(nn.Module):
                 "ffn": nn.Sequential(nn.Linear(d_model, 4 * d_model), nn.GELU(),
                                      nn.Linear(4 * d_model, d_model)),
             }))
-        self.out = nn.Linear(d_model, LATENT)
+        self.out = nn.Linear(d_model, latent)
 
     def forward(self, tokens):
         kv = self.proj(tokens)                    # (B, 3, d)
@@ -81,9 +80,9 @@ class PMAReadout(nn.Module):
 MODULES = {"mlp": MLPConcat, "cls": CLSTransformer, "pma": PMAReadout}
 
 
-def build_policy(name, d_model=512, layers=4, heads=8, n_tokens=3):
+def build_policy(name, d_model=512, layers=4, heads=8, n_tokens=3, latent=768):
     return MODULES[name](d_model=d_model, layers=layers, heads=heads,
-                         n_tokens=n_tokens)
+                         n_tokens=n_tokens, latent=latent)
 
 
 def policy_losses(zeta, chunk_fut, z_cur, z_next, ae, w):

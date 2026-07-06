@@ -32,7 +32,7 @@ matplotlib.rcParams.update({"font.family": ["Noto Sans CJK KR", "sans-serif"],
                             "axes.unicode_minus": False})
 import matplotlib.pyplot as plt
 
-from core.clip_wrapper import ClipWrapper
+from core.anchor import get_anchor
 from data.act_sim import ActSimDataset
 from models.networks import DeltaAE
 from models.policy import build_policy
@@ -46,16 +46,18 @@ def load_models(cfg, device):
     ck1 = torch.load(os.path.expanduser(cfg["phase1_ckpt"]),
                      map_location="cpu", weights_only=False)
     p1 = ck1["config"]
-    ae = DeltaAE(ck1["action_dim"], ck1["n_chunk"], p1["model"]["latent_dim"],
+    latent = ck1.get("latent_dim", p1["model"]["latent_dim"])
+    ae = DeltaAE(ck1["action_dim"], ck1["n_chunk"], latent,
                  p1["model"]["hidden"], p1["model"]["layers"],
                  p1["model"]["dropout"],
-                 p1["model"].get("state_cond", True)).to(device).eval()
+                 p1["model"].get("state_cond", True),
+                 align_mode=p1["model"].get("align_mode", "dz")).to(device).eval()
     ae.load_state_dict(ck1["state_dict"])
     ck2 = torch.load(os.path.expanduser(cfg["train"]["checkpoint"]),
                      map_location="cpu", weights_only=False)
     m = ck2["config"]["module"]
     policy = build_policy(m["name"], m["d_model"], m["layers"],
-                          m.get("heads", 8)).to(device).eval()
+                          m.get("heads", 8), latent=latent).to(device).eval()
     policy.load_state_dict(ck2["state_dict"])
     return ae, policy, ck1["a_mean"], ck1["a_std"], ck1["n_chunk"], ck1["action_dim"]
 
@@ -74,7 +76,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     ae, policy, a_mean, a_std, n_chunk, act_dim = load_models(cfg, device)
     ds = ActSimDataset(cfg)
-    clip = ClipWrapper()
+    clip = get_anchor(cfg)
 
     # 에피소드 선택: 지정 없으면 학습과 동일한 분할 재현 후 해당 task의 val 첫 번째
     files = ds.episode_files()

@@ -31,7 +31,7 @@ matplotlib.rcParams.update({"font.family": ["Noto Sans CJK KR", "sans-serif"],
                             "axes.unicode_minus": False})
 import matplotlib.pyplot as plt
 
-from core.clip_wrapper import ClipWrapper
+from core.anchor import get_anchor
 from data.libero import LiberoDataset
 from models.networks import DeltaAE
 from models.policy import build_policy
@@ -44,10 +44,12 @@ def load_models(cfg, device):
     ck1 = torch.load(os.path.expanduser(cfg["phase1_ckpt"]),
                      map_location="cpu", weights_only=False)
     p1 = ck1["config"]
-    ae = DeltaAE(ck1["action_dim"], ck1["n_chunk"], p1["model"]["latent_dim"],
+    latent = ck1.get("latent_dim", p1["model"]["latent_dim"])
+    ae = DeltaAE(ck1["action_dim"], ck1["n_chunk"], latent,
                  p1["model"]["hidden"], p1["model"]["layers"],
                  p1["model"]["dropout"],
-                 p1["model"].get("state_cond", True)).to(device).eval()
+                 p1["model"].get("state_cond", True),
+                 align_mode=p1["model"].get("align_mode", "dz")).to(device).eval()
     ae.load_state_dict(ck1["state_dict"])
     ck2 = torch.load(os.path.expanduser(cfg["train"]["checkpoint"]),
                      map_location="cpu", weights_only=False)
@@ -55,7 +57,8 @@ def load_models(cfg, device):
     use_lang = m.get("lang_token", False)
     policy = build_policy(m["name"], m["d_model"], m["layers"],
                           m.get("heads", 8),
-                          n_tokens=4 if use_lang else 3).to(device).eval()
+                          n_tokens=4 if use_lang else 3,
+                          latent=latent).to(device).eval()
     policy.load_state_dict(ck2["state_dict"])
     return (ae, policy, ck1["a_mean"], ck1["a_std"], ck1["n_chunk"],
             ck1["action_dim"], use_lang)
@@ -72,7 +75,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     ae, policy, a_mean, a_std, n_chunk, act_dim, use_lang = load_models(cfg, device)
     ds = LiberoDataset(cfg)
-    clip = ClipWrapper()
+    clip = get_anchor(cfg)
 
     eps = ds.episode_files()
     rng = np.random.RandomState(cfg["train"]["seed"])

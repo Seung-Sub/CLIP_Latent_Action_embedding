@@ -22,7 +22,7 @@ import torch
 import yaml
 from torch.utils.data import DataLoader, TensorDataset
 
-from core.clip_wrapper import ClipWrapper
+from core.anchor import get_anchor
 from data import get_dataset
 from models.networks import DeltaAE
 
@@ -50,7 +50,7 @@ def apply_override(cfg, kv):
     node = cfg
     parts = key.split(".")
     for p in parts[:-1]:
-        node = node[p]
+        node = node.setdefault(p, {})     # 없는 상위 키 생성 (예: anchor.projection)
     node[parts[-1]] = yaml.safe_load(val)
 
 
@@ -88,8 +88,11 @@ def main():
     val_ids, tr_ids = perm[:n_val], perm[n_val:]
     print(f"episodes: train {len(tr_ids)} / val {len(val_ids)}")
 
-    clip = ClipWrapper()
-    print("인코딩/캐시 로드 중...")
+    clip = get_anchor(cfg)
+    latent_dim = clip.dim                      # anchor.dim으로 일반화 (Phase 0.1)
+    if latent_dim != m_cfg.get("latent_dim", latent_dim):
+        print(f"note: latent_dim {m_cfg['latent_dim']}(config) → {latent_dim}(anchor {clip.id})")
+    print(f"anchor: {clip.cache_key} | 인코딩/캐시 로드 중...")
     eps = ds.build(clip, files, verbose=False)
 
     def stack(ids):
@@ -117,6 +120,21 @@ def main():
     Ddec_tr, Ddec_va = D_tr, D_va
     print(f"pairs: train {len(C_tr)} / val {len(C_va)} | chunk {n_chunk}x{act_dim}")
 
+    # ---- C8: 모션 문장 (align_mode direct/hybrid 전용) ----
+    align_mode = m_cfg.get("align_mode", "dz")
+    sent_emb_t = ids_tr_t = ids_va_t = None
+    if align_mode != "dz":
+        from data.motion_lang import MotionSentences
+        ms = MotionSentences()
+        ids_tr = ms.assign(A_tr.reshape(-1, n_chunk, act_dim))
+        ids_va = ms.assign(A_va.reshape(-1, n_chunk, act_dim))
+        sent_emb = ms.embed_all(clip)          # (n_sent, dim_text)
+        print(f"C8 align_mode={align_mode}: 고유 문장 {len(ms.sentences)}, "
+              f"train 사용 {len(np.unique(ids_tr))}종")
+        sent_emb_t = torch.tensor(sent_emb, device=device)
+        ids_tr_t = torch.tensor(ids_tr)
+        ids_va_t = torch.tensor(ids_va, device=device)
+
     # ---- wandb ----
     wb = None
     wb_cfg = cfg.get("wandb", {})
@@ -126,9 +144,11 @@ def main():
                         mode=wb_cfg.get("mode", "offline"), config=cfg)
 
     # ---- 모델/학습 ----
-    model = DeltaAE(act_dim, n_chunk, m_cfg["latent_dim"], m_cfg["hidden"],
+    model = DeltaAE(act_dim, n_chunk, latent_dim, m_cfg["hidden"],
                     m_cfg["layers"], m_cfg["dropout"],
-                    m_cfg.get("state_cond", True)).to(device)
+                    m_cfg.get("state_cond", True),
+                    align_mode=align_mode,
+                    contrast_w=float(w.get("contrast", 0.0))).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"DeltaAE params: {n_params/1e6:.2f}M (encoder cnn/{m_cfg['hidden']}x"
           f"{m_cfg['layers']}, decoder mlp/{m_cfg['hidden']}x{m_cfg['layers']})")
@@ -136,9 +156,11 @@ def main():
                            betas=tuple(t_cfg.get("adam_betas", (0.9, 0.999))))
 
     # DataLoader: shuffle=True -> 매 epoch 전체 시점을 랜덤 순서로 배치 구성
+    ids_col = ids_tr_t if ids_tr_t is not None else torch.zeros(len(C_tr),
+                                                                dtype=torch.long)
     loader = DataLoader(
         TensorDataset(torch.tensor(C_tr), torch.tensor(T_tr),
-                      torch.tensor(Zt_tr)),
+                      torch.tensor(Zt_tr), ids_col),
         batch_size=t_cfg["batch_size"], shuffle=True, drop_last=False)
     Cv = torch.tensor(C_va, device=device)
     Dv = torch.tensor(T_va, device=device)
@@ -163,16 +185,22 @@ def main():
     for ep in range(epochs):
         model.train()
         logs, part_logs = [], []
-        for chunk_b, delta_b, zt_b in loader:
+        for chunk_b, delta_b, zt_b, ids_b in loader:
+            kw = {}
+            if align_mode != "dz":
+                ids_b = ids_b.to(device)
+                kw = {"text_emb": sent_emb_t[ids_b], "sent_ids": ids_b}
             loss, parts = model.losses(chunk_b.to(device), delta_b.to(device),
-                                       w, zt_b.to(device))
+                                       w, zt_b.to(device), **kw)
             opt.zero_grad(); loss.backward(); opt.step()
             if sched:
                 sched.step()
             logs.append(loss.item()); part_logs.append(parts)
         model.eval()
         with torch.no_grad():
-            val_loss, val_parts = model.losses(Cv, Dv, w, Zv)
+            kw_v = ({"text_emb": sent_emb_t[ids_va_t], "sent_ids": ids_va_t}
+                    if align_mode != "dz" else {})
+            val_loss, val_parts = model.losses(Cv, Dv, w, Zv, **kw_v)
         val_loss = val_loss.item()
         if val_loss < best_val - 1e-5:
             best_val, patience = val_loss, 0
@@ -211,6 +239,28 @@ def main():
     t1a, t5a = retrieval(ghat, T_va)
     t1z, t5z = retrieval(T_va, ghat)
     chance1, chance5 = 100 / len(C_va), 500 / len(C_va)
+
+    # C8: text→action 검색 (val 고유 문장 → 최근접 g(a)의 카테고리 일치율)
+    t2a_top1 = t2a_top5 = None
+    if align_mode != "dz":
+        cat_of_sent = {}
+        for (cat, vi, g), sid in ms.index.items():
+            cat_of_sent[sid] = cat
+        ids_va_np = ids_va_t.cpu().numpy()
+        uniq = np.unique(ids_va_np)
+        Q = sent_emb[uniq]
+        Qn = Q / (np.linalg.norm(Q, axis=1, keepdims=True) + 1e-8)
+        Gn = ghat / (np.linalg.norm(ghat, axis=1, keepdims=True) + 1e-8)
+        nn5 = (-(Qn @ Gn.T)).argsort(1)[:, :5]
+        hits1 = hits5 = 0
+        for qi, sid in enumerate(uniq):
+            qcat = cat_of_sent[sid]
+            ncats = [cat_of_sent[ids_va_np[j]] for j in nn5[qi]]
+            hits1 += ncats[0] == qcat
+            hits5 += qcat in ncats
+        t2a_top1, t2a_top5 = 100 * hits1 / len(uniq), 100 * hits5 / len(uniq)
+        print(f"text→action 검색 (카테고리 일치) top-1 {t2a_top1:.1f}% "
+              f"top-5 {t2a_top5:.1f}% ({len(uniq)} 고유 문장)")
     print(f"\n=== held-out 평가 ({len(C_va)} pairs) ===")
     print(f"디코더 h(Δz->a)  R² = {dec_r2:+.3f}   [복구]")
     print(f"cycle h(g(a))    R² = {cyc_r2:+.3f}   [복구]")
@@ -222,12 +272,16 @@ def main():
     metrics = {"decoder_r2": dec_r2, "cycle_r2": cyc_r2,
                "align_cos": align_cos, "best_val_loss": float(best_val),
                "retrieval_a2z": [t1a, t5a], "retrieval_z2a": [t1z, t5z],
-               "n_train_pairs": len(C_tr), "n_val_pairs": len(C_va)}
+               "n_train_pairs": len(C_tr), "n_val_pairs": len(C_va),
+               "align_mode": align_mode,
+               "text2action_top1": t2a_top1, "text2action_top5": t2a_top5}
     ckpt_path = Path(os.path.expanduser(t_cfg["checkpoint"]))
     ckpt_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save({"state_dict": best_state, "config": cfg,
                 "a_mean": a_mean, "a_std": a_std,
                 "action_dim": act_dim, "n_chunk": n_chunk,
+                "latent_dim": latent_dim,
+                "anchor": {"id": clip.id, "cache_key": clip.cache_key},
                 "metrics": metrics}, ckpt_path)
     print(f"저장: {ckpt_path}")
     if args.tag:  # 그리드서치용 지표 json

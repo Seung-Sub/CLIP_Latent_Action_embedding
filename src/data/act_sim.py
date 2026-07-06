@@ -50,12 +50,24 @@ class ActSimDataset:
         with h5py.File(path, "r") as f:
             return f[f"observations/images/{camera}"][:]
 
-    # ---------- CLIP 임베딩 캐시 ----------
+    # ---------- 임베딩 캐시 (앵커별 분리: {anchor_id}/{projection}/{normalize}) ----------
+
+    def _cache_path(self, encoder, filename):
+        key = getattr(encoder, "cache_key", None)
+        if key is None:                                   # 구형 ClipWrapper 직접 사용
+            return self.cache_dir / filename
+        p = self.cache_dir / key / filename
+        legacy = self.cache_dir / filename
+        # 하위호환: 기본 앵커(기존 ClipWrapper와 동일 출력)는 기존 평면 캐시 재사용
+        if not p.exists() and key == "clip-vit-l-14/joint/norm" and legacy.exists():
+            return legacy
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return p
 
     def embeddings(self, clip, path, camera=None):
         camera = camera or self.cameras[0]
-        cache = self.cache_dir / (path.parent.name + "_" + path.stem
-                                  + f"_{camera}.npz")
+        cache = self._cache_path(clip, path.parent.name + "_" + path.stem
+                                 + f"_{camera}.npz")
         if cache.exists():
             return np.load(cache)["Z"]
         imgs = self.load_frames(path, camera)

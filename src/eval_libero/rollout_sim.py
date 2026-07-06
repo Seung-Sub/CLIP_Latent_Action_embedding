@@ -19,6 +19,8 @@ sys.path.insert(0, str(WS / "src"))
 
 import argparse
 import collections
+import hashlib
+import json
 import os
 import time
 
@@ -27,9 +29,20 @@ import torch
 import yaml
 from PIL import Image
 
-from core.clip_wrapper import ClipWrapper
+from core.anchor import get_anchor
 from data.libero import LiberoDataset
 from eval_libero.rollout_dataset import load_models
+
+
+def wilson(k, n, z=1.96):
+    """이항 성공률 Wilson 95% CI."""
+    if n == 0:
+        return 0.0, 1.0
+    p = k / n
+    denom = 1 + z * z / n
+    center = (p + z * z / (2 * n)) / denom
+    half = z * np.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return max(0.0, center - half), min(1.0, center + half)
 
 
 def main():
@@ -38,9 +51,19 @@ def main():
     ap.add_argument("--suite", default="libero_spatial")
     ap.add_argument("--task-id", type=int, default=None,
                     help="특정 태스크만 (기본: suite 전체)")
-    ap.add_argument("--episodes", type=int, default=10, help="태스크당 롤아웃 수")
+    ap.add_argument("--episodes", type=int, default=50, help="태스크당 롤아웃 수 (공표 관행 50)")
     ap.add_argument("--exec-horizon", type=int, default=8)
     ap.add_argument("--max-steps", type=int, default=300)
+    ap.add_argument("--wait-steps", type=int, default=10,
+                    help="시작 물리 안정화 더미 스텝 (OpenVLA 관행 10, max_steps 불포함)")
+    ap.add_argument("--save-fail-videos", type=int, default=2,
+                    help="태스크당 실패 영상 저장 편수 (리포트 규약)")
+    ap.add_argument("--run-id", default=None, help="§8 JSON run_id (기본: 자동 생성)")
+    ap.add_argument("--data-variant", default="raw",
+                    choices=["raw", "openvla_modified"],
+                    help="학습 데이터 판본 — 모든 결과에 명기 의무")
+    ap.add_argument("--phase", default="phase0", help="리포트 phase 필드")
+    ap.add_argument("--notes", default="", help="리포트 notes 필드")
     ap.add_argument("--flip", action=argparse.BooleanOptionalAction, default=False,
                     help="env 렌더 상하반전 (실측: 데모와 동일 방향 — 기본 off)")
     ap.add_argument("--save-video", type=int, default=0)
@@ -53,7 +76,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     ae, policy, a_mean, a_std, n_chunk, act_dim, use_lang = load_models(cfg, device)
     ds = LiberoDataset(cfg)          # span/resample 재사용
-    clip = ClipWrapper()
+    clip = get_anchor(cfg)
     span, H = ds.span, args.exec_horizon
 
     suite = benchmark.get_benchmark_dict()[args.suite]()
@@ -80,16 +103,18 @@ def main():
         def encode(obs):
             return clip.encode_images([Image.fromarray(frame(obs))])["embeds"][0]
 
+        n_fail_saved = 0
+        grasp_flags = []
         for ep in range(args.episodes):
             env.reset()
             obs = env.set_init_state(init_states[ep % len(init_states)])
-            for _ in range(5):                       # 물리 안정화 (LIBERO 관례)
+            for _ in range(args.wait_steps):         # 물리 안정화 (OpenVLA 관행 10)
                 obs, *_ = env.step([0.0] * 6 + [-1.0])
             rest = np.array([0.0] * 6 + [-1.0])
             past_actions = collections.deque([rest.copy() for _ in range(span)],
                                              maxlen=span)
             z_hist = collections.deque([encode(obs)], maxlen=span // H + 1)
-            frames, done, t = [], False, 0
+            frames, done, t, grasp_cmd = [], False, 0, False
             with torch.no_grad():
                 while t < args.max_steps and not done:
                     t0 = time.time()
@@ -106,36 +131,97 @@ def main():
                     for k in range(min(H, args.max_steps - t)):
                         obs, r, done, info = env.step(ahat[k])
                         past_actions.append(ahat[k].copy())
-                        if ep < args.save_video:
-                            frames.append(frame(obs))
+                        grasp_cmd = grasp_cmd or ahat[k][-1] > 0
+                        frames.append(frame(obs))    # 실패 영상 쿼터용으로 항상 기록
                         t += 1
                         if done:
                             break
                     z_hist.append(encode(obs))
             ok = bool(done)                          # LIBERO: done == success
             succ.append(ok)
+            # 실패 모드 근사 태깅: 그리퍼 닫기 명령이 한 번이라도 나갔는가 (reach/grasp 구분)
+            grasp_flags.append(grasp_cmd)
             print(f"[task {tid}] ep {ep:2d} | {'SUCCESS' if ok else 'fail'} "
                   f"| steps {t} | 추론 {np.mean(infer_ms):.1f}ms", flush=True)
-            if ep < args.save_video and frames:
+            save_this = (ep < args.save_video) or \
+                (not ok and n_fail_saved < args.save_fail_videos)
+            if save_this and frames:
                 import imageio
                 videos_dir.mkdir(parents=True, exist_ok=True)
                 vp = videos_dir / f"libero_t{tid}_ep{ep}_{'ok' if ok else 'fail'}.mp4"
                 imageio.mimsave(vp, frames, fps=20)
+                if not ok:
+                    n_fail_saved += 1
         env.close()
-        sr = float(np.mean(succ)) * 100
-        results[tid] = sr
-        print(f"== task {tid} [{task.language[:50]}]: {sr:.0f}% "
-              f"({int(np.sum(succ))}/{args.episodes})", flush=True)
+        k = int(np.sum(succ))
+        lo, hi = wilson(k, len(succ))
+        # 실패 모드: 그리퍼 닫기 명령조차 없음=reach / 있었으나 실패=grasp
+        # (wrong_object/wrong_goal은 영상 수동 태깅 대상 — 자동 근사 불가)
+        fails = [(s, g) for s, g in zip(succ, grasp_flags) if not s]
+        results[tid] = {
+            "sr": k / len(succ), "n": len(succ), "wilson_ci": [lo, hi],
+            "language": task.language, "n_init_states": len(init_states),
+            "failure_modes": {"reach": sum(1 for _, g in fails if not g),
+                              "grasp": sum(1 for _, g in fails if g),
+                              "wrong_object": 0, "wrong_goal": 0},
+        }
+        print(f"== task {tid} [{task.language[:50]}]: {k}/{len(succ)} "
+              f"= {100*k/len(succ):.0f}% (CI {100*lo:.0f}–{100*hi:.0f}%)", flush=True)
 
-    print(f"\n=== {args.suite} | 태스크당 {args.episodes} 롤아웃 ===")
-    for tid, sr in results.items():
-        print(f"task {tid:2d}: {sr:5.1f}%  {suite.get_task(tid).language[:60]}")
-    print(f"평균 성공률: {np.mean(list(results.values())):.1f}%")
-    out = WS / "outputs" / "eval" / f"rollout_{args.suite}.txt"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(f"task{t}: {s:.1f}%" for t, s in results.items())
-                   + f"\nmean: {np.mean(list(results.values())):.1f}%\n")
-    print(f"저장: {out}")
+    srs = [r["sr"] for r in results.values()]
+    K = sum(int(r["sr"] * r["n"]) for r in results.values())
+    N = sum(r["n"] for r in results.values())
+    s_lo, s_hi = wilson(K, N)
+    print(f"\n=== {args.suite} | 태스크당 {args.episodes} 롤아웃 (paired init_states) ===")
+    for tid, r in results.items():
+        print(f"task {tid:2d}: {100*r['sr']:5.1f}%  "
+              f"[{100*r['wilson_ci'][0]:.0f}–{100*r['wilson_ci'][1]:.0f}]  "
+              f"{r['language'][:55]}")
+    print(f"평균 성공률: {100*np.mean(srs):.1f}%  "
+          f"(suite CI {100*s_lo:.1f}–{100*s_hi:.1f}%, {K}/{N})")
+
+    # ---- §8 JSON 리포트 ----
+    ck1 = torch.load(os.path.expanduser(cfg["phase1_ckpt"]),
+                     map_location="cpu", weights_only=False)
+    ck2 = torch.load(os.path.expanduser(cfg["train"]["checkpoint"]),
+                     map_location="cpu", weights_only=False)
+    p1m = ck1.get("metrics", {})
+    run_id = args.run_id or (f"{args.phase}_{args.suite}"
+                             f"_{args.data_variant}_s{cfg['train']['seed']}")
+    anchor_info = ck1.get("anchor", {"id": clip.id, "cache_key": clip.cache_key})
+    report = {
+        "run_id": run_id, "phase": args.phase, "track": "libero",
+        "condition": {"anchor": anchor_info.get("id"),
+                      "anchor_cache_key": anchor_info.get("cache_key"),
+                      "obs": anchor_info.get("id"),      # 현행: 앵커=관측 인코더 겸용
+                      "lang": "L1" if use_lang else "L0",
+                      "data_variant": args.data_variant, "extras": []},
+        "suite": args.suite, "train_seed": cfg["train"]["seed"],
+        "eval": {"n_per_task": args.episodes,
+                 "per_task_sr": [round(r["sr"], 4) for r in results.values()],
+                 "suite_sr": round(float(np.mean(srs)), 4),
+                 "wilson_ci": [round(s_lo, 4), round(s_hi, 4)],
+                 "max_steps": args.max_steps, "wait_steps": args.wait_steps,
+                 "paired_init_states": True, "exec_horizon": H,
+                 "per_task": {str(t): r for t, r in results.items()},
+                 "failure_modes": {m: sum(r["failure_modes"][m] for r in results.values())
+                                   for m in ("reach", "grasp", "wrong_object", "wrong_goal")},
+                 "infer_ms_mean": round(float(np.mean(infer_ms)), 2)},
+        "offline": {"phase1_r2": p1m.get("decoder_r2"),
+                    "phase1_cycle_r2": p1m.get("cycle_r2"),
+                    "retr_top1": (p1m.get("retrieval_a2z") or [None])[0],
+                    "latcos": ck2.get("metrics", {}).get("lat_cos")},
+        "train": {k: cfg["train"].get(k) for k in ("epochs", "lr", "batch_size")},
+        "config_hash": hashlib.md5(
+            json.dumps(cfg, sort_keys=True, default=str).encode()).hexdigest()[:12],
+        "wandb": cfg.get("wandb", {}).get("run_name"),
+        "notes": args.notes,
+    }
+    rep_dir = WS / "outputs" / "report"
+    rep_dir.mkdir(parents=True, exist_ok=True)
+    rep_path = rep_dir / f"{run_id}.json"
+    rep_path.write_text(json.dumps(report, indent=1, ensure_ascii=False))
+    print(f"리포트 저장: {rep_path}")
 
 
 if __name__ == "__main__":
