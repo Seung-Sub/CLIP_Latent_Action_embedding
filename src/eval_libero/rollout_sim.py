@@ -46,6 +46,39 @@ def wilson(k, n, z=1.96):
     return max(0.0, center - half), min(1.0, center + half)
 
 
+def classify_failure(goal_state, init_pos, final_pos, target_max_lift,
+                     grasp_cmd):
+    """sim 상태 기반 실패 분류 (S1.v2 §3).
+
+    규칙(순서 고정): 타깃 미변위·미리프트 → reach/grasp (그리퍼 명령 유무로 구분)
+    / 타깃 미변위 + 타물체 대변위 → wrong_object / 타깃 리프트 후 목표 미충족 →
+    wrong_goal / 그 외 → grasp. 임계: 변위 2cm, 리프트 5cm, 타물체 5cm.
+    """
+    try:
+        target = goal_state[0][1]
+    except (IndexError, TypeError):
+        return "grasp" if grasp_cmd else "reach"
+    t_disp = np.linalg.norm(final_pos.get(target, np.zeros(3))
+                            - init_pos.get(target, np.zeros(3)))
+    others_moved = any(
+        np.linalg.norm(final_pos[o] - init_pos[o]) > 0.05
+        for o in init_pos if o != target)
+    if t_disp < 0.02 and target_max_lift < 0.05:
+        if others_moved:
+            return "wrong_object"
+        return "grasp" if grasp_cmd else "reach"
+    if target_max_lift >= 0.05:
+        return "wrong_goal"        # 파지·리프트까지 성공, 배치 실패
+    return "grasp"
+
+
+def object_positions(obs):
+    """obs에서 물체 위치 dict 추출 (robot·상대좌표 키 제외)."""
+    return {k[:-4]: np.array(obs[k]) for k in obs
+            if k.endswith("_pos") and not k.startswith("robot0")
+            and "_to_" not in k}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=str(WS / "configs" / "phase2_libero.yaml"))
@@ -76,7 +109,7 @@ def main():
     cfg = yaml.safe_load(open(args.config))
     device = "cuda" if torch.cuda.is_available() else "cpu"
     (ae, policy, a_mean, a_std, n_chunk, act_dim, use_lang,
-     repr_kind, wrist_cam) = load_models(cfg, device)
+     repr_kind, wrist_cam, proprio) = load_models(cfg, device)
     ds = LiberoDataset(cfg)          # span/resample 재사용
     clip = get_anchor(cfg)
     span, H = ds.span, args.exec_horizon
@@ -111,12 +144,20 @@ def main():
             return clip.encode_images([Image.fromarray(img)])["embeds"][0]
 
         n_fail_saved = 0
-        grasp_flags = []
+        grasp_flags, ep_steps, fail_tags = [], [], []
         for ep in range(args.episodes):
             env.reset()
             obs = env.set_init_state(init_states[ep % len(init_states)])
             for _ in range(args.wait_steps):         # 물리 안정화 (OpenVLA 관행 10)
                 obs, *_ = env.step([0.0] * 6 + [-1.0])
+            init_pos = object_positions(obs)
+            goal_state = env.env.parsed_problem.get("goal_state", []) \
+                if hasattr(env.env, "parsed_problem") else []
+            try:
+                target_name = goal_state[0][1]
+            except (IndexError, TypeError):
+                target_name = None
+            target_max_lift = 0.0
             rest = np.array([0.0] * 6 + [-1.0])
             past_actions = collections.deque([rest.copy() for _ in range(span)],
                                              maxlen=span)
@@ -134,6 +175,13 @@ def main():
                     toks = [zp, zc, a_emb] + ([lang] if use_lang else []) \
                         + ([torch.tensor(encode_wrist(obs)[None], device=device)]
                            if wrist_cam else [])
+                    if proprio is not None:
+                        p = np.concatenate([obs["robot0_joint_pos"],
+                                            obs["robot0_gripper_qpos"]])
+                        p = (p - proprio["mean"]) / proprio["std"]
+                        toks.append(policy.proprio_proj(
+                            torch.tensor(p[None], dtype=torch.float32,
+                                         device=device)))
                     zeta = policy(torch.stack(toks, dim=1))
                     ahat = chunkrep.from_repr(
                         ae.h(zeta, zc).cpu().numpy()[0], repr_kind) \
@@ -144,6 +192,10 @@ def main():
                         obs, r, done, info = env.step(ahat[k])
                         past_actions.append(ahat[k].copy())
                         grasp_cmd = grasp_cmd or ahat[k][-1] > 0
+                        if target_name and f"{target_name}_pos" in obs:
+                            lift = obs[f"{target_name}_pos"][2] \
+                                - init_pos[target_name][2]
+                            target_max_lift = max(target_max_lift, float(lift))
                         frames.append(frame(obs))    # 실패 영상 쿼터용으로 항상 기록
                         t += 1
                         if done:
@@ -151,8 +203,12 @@ def main():
                     z_hist.append(encode(obs))
             ok = bool(done)                          # LIBERO: done == success
             succ.append(ok)
-            # 실패 모드 근사 태깅: 그리퍼 닫기 명령이 한 번이라도 나갔는가 (reach/grasp 구분)
+            ep_steps.append(t)                       # SR@220 사후 산출용 (S1.v2 §1)
             grasp_flags.append(grasp_cmd)
+            if not ok:
+                fail_tags.append(classify_failure(
+                    goal_state, init_pos, object_positions(obs),
+                    target_max_lift, grasp_cmd))
             print(f"[task {tid}] ep {ep:2d} | {'SUCCESS' if ok else 'fail'} "
                   f"| steps {t} | 추론 {np.mean(infer_ms):.1f}ms", flush=True)
             save_this = (ep < args.save_video) or \
@@ -169,13 +225,17 @@ def main():
         lo, hi = wilson(k, len(succ))
         # 실패 모드: 그리퍼 닫기 명령조차 없음=reach / 있었으나 실패=grasp
         # (wrong_object/wrong_goal은 영상 수동 태깅 대상 — 자동 근사 불가)
-        fails = [(s, g) for s, g in zip(succ, grasp_flags) if not s]
+        sr220 = float(np.mean([o and st <= 220
+                               for o, st in zip(succ, ep_steps)]))
         results[tid] = {
             "sr": k / len(succ), "n": len(succ), "wilson_ci": [lo, hi],
+            "sr_at_220": sr220,
+            "episodes": [{"ok": bool(o), "steps": int(st)}
+                         for o, st in zip(succ, ep_steps)],
             "language": task.language, "n_init_states": len(init_states),
-            "failure_modes": {"reach": sum(1 for _, g in fails if not g),
-                              "grasp": sum(1 for _, g in fails if g),
-                              "wrong_object": 0, "wrong_goal": 0},
+            "failure_modes": {m: fail_tags.count(m)
+                              for m in ("reach", "grasp",
+                                        "wrong_object", "wrong_goal")},
         }
         print(f"== task {tid} [{task.language[:50]}]: {k}/{len(succ)} "
               f"= {100*k/len(succ):.0f}% (CI {100*lo:.0f}–{100*hi:.0f}%)", flush=True)
@@ -216,6 +276,8 @@ def main():
                  "max_steps": args.max_steps, "wait_steps": args.wait_steps,
                  "paired_init_states": True, "exec_horizon": H,
                  "per_task": {str(t): r for t, r in results.items()},
+                 "sr_at_220": round(float(np.mean(
+                     [r["sr_at_220"] for r in results.values()])), 4),
                  "failure_modes": {m: sum(r["failure_modes"][m] for r in results.values())
                                    for m in ("reach", "grasp", "wrong_object", "wrong_goal")},
                  "infer_ms_mean": round(float(np.mean(infer_ms)), 2)},

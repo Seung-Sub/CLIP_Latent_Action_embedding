@@ -116,6 +116,19 @@ def main():
     W_tr = Wx_tr[0] if use_wrist else None
     W_va = Wx_va[0] if use_wrist else None
 
+    # proprio 토큰 (S1.v2 §4): joint+gripper 9D → latent 사영 (사영층은 정책과 공동학습)
+    use_proprio = m_cfg.get("proprio_token", False)
+    p_mean = p_std = None
+    if use_proprio:
+        P_eps = ds.build_proprio(files, stride=cfg["data"].get("stride", 2))
+        P_tr = np.concatenate([P_eps[i] for i in tr_ids])
+        P_va = np.concatenate([P_eps[i] for i in val_ids])
+        p_mean = P_tr.mean(0)
+        p_std = np.maximum(P_tr.std(0), 1e-6)
+        P_tr = ((P_tr - p_mean) / p_std).astype(np.float32)
+        P_va = ((P_va - p_mean) / p_std).astype(np.float32)
+        m_cfg["proprio_dim"] = int(P_tr.shape[1])
+
     # 언어 토큰 (멀티태스크 조건화): 에피소드별 지시문 임베딩을 샘플 수만큼 복제
     use_lang = m_cfg.get("lang_token", False)
     if use_lang:
@@ -157,7 +170,7 @@ def main():
                         mode=wb_cfg.get("mode", "online"), config=cfg)
 
     # ---- 정책 모델 ----
-    n_tokens = 3 + int(use_lang) + int(use_wrist)
+    n_tokens = 3 + int(use_lang) + int(use_wrist) + int(use_proprio)
     model = build_policy_from_cfg(m_cfg, n_tokens=n_tokens,
                                   latent=latent).to(device)
     is_flow = isinstance(model, FlowPolicy)
@@ -176,16 +189,19 @@ def main():
 
     L_tr_t = torch.tensor(L_tr) if use_lang else torch.zeros(len(Cp_tr), 0)
     W_tr_t = torch.tensor(W_tr) if use_wrist else torch.zeros(len(Cp_tr), 0)
+    P_tr_t = torch.tensor(P_tr) if use_proprio else torch.zeros(len(Cp_tr), 0)
     loader = DataLoader(
         TensorDataset(torch.tensor(Zp_tr), torch.tensor(Zc_tr),
                       torch.tensor(Zn_tr), torch.tensor(Cp_tr),
-                      torch.tensor(Cf_tr), L_tr_t, W_tr_t),
+                      torch.tensor(Cf_tr), L_tr_t, W_tr_t, P_tr_t),
         batch_size=t_cfg["batch_size"], shuffle=True)
     val_t = [torch.tensor(x, device=device) for x in (Zp_va, Zc_va, Zn_va)] \
         + [Ae_va.to(device), torch.tensor(Cf_va, device=device)] \
         + [torch.tensor(L_va, device=device) if use_lang
            else torch.zeros(len(Cf_va), 0, device=device)] \
         + [torch.tensor(W_va, device=device) if use_wrist
+           else torch.zeros(len(Cf_va), 0, device=device)] \
+        + [torch.tensor(P_va, device=device) if use_proprio
            else torch.zeros(len(Cf_va), 0, device=device)]
     epochs = 3 if args.smoke else t_cfg["epochs"]
     best_val, best_state, patience = np.inf, None, 0
@@ -202,9 +218,10 @@ def main():
             return 0.5 * (1 + np.cos(np.pi * min(prog, 1.0)))
         sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    def forward(zp, zc, zn, aemb, cf, lang, wr):
+    def forward(zp, zc, zn, aemb, cf, lang, wr, pr):
         toks = [zp, zc, aemb] + ([lang] if use_lang else []) \
-            + ([wr] if use_wrist else [])
+            + ([wr] if use_wrist else []) \
+            + ([model.proprio_proj(pr)] if use_proprio else [])
         toks = torch.stack(toks, dim=1)               # (B, 3~5, 768)
         if is_flow:
             # lat 자리 = CFM 손실, act = FLD(ODE 샘플 디코딩). val은 고정시드로 결정화
@@ -223,22 +240,22 @@ def main():
         zeta = model(toks)
         return policy_losses(zeta, cf, zc, zn, ae, w)
 
-    def forward_train(zp, zc, zn, cp, cf, lang, wr):
+    def forward_train(zp, zc, zn, cp, cf, lang, wr, pr):
         if past_noise > 0:                            # 폐루프 오차 누적 모사
             cp = cp + torch.randn_like(cp) * past_noise
         with torch.no_grad():
             aemb = ae.g(cp, zp)
-        return forward(zp, zc, zn, aemb, cf, lang, wr)
+        return forward(zp, zc, zn, aemb, cf, lang, wr, pr)
 
     t0 = time.time()
     for ep in range(epochs):
         model.train()
         logs, parts_log = [], []
-        for zp, zc, zn, cp, cf, lang, wr in loader:
+        for zp, zc, zn, cp, cf, lang, wr, pr in loader:
             loss, parts = forward_train(zp.to(device), zc.to(device),
                                         zn.to(device), cp.to(device),
                                         cf.to(device), lang.to(device),
-                                        wr.to(device))
+                                        wr.to(device), pr.to(device))
             opt.zero_grad(); loss.backward(); opt.step()
             if sched:
                 sched.step()
@@ -272,7 +289,8 @@ def main():
     model.eval()
     with torch.no_grad():
         toks = [val_t[0], val_t[1], val_t[3]] + ([val_t[5]] if use_lang else []) \
-            + ([val_t[6]] if use_wrist else [])
+            + ([val_t[6]] if use_wrist else []) \
+            + ([model.proprio_proj(val_t[7])] if use_proprio else [])
         gen = torch.Generator(device=device)
         gen.manual_seed(0)
         zeta = model(torch.stack(toks, dim=1), generator=gen) if is_flow \
@@ -313,7 +331,8 @@ def main():
                "n_val": len(Cf)}
     ckpt_path = Path(os.path.expanduser(t_cfg["checkpoint"]))
     ckpt_path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save({"state_dict": best_state, "config": cfg, "metrics": metrics},
+    torch.save({"state_dict": best_state, "config": cfg, "metrics": metrics,
+                "p_mean": p_mean, "p_std": p_std},
                ckpt_path)
     print(f"저장: {ckpt_path}")
     if args.tag:

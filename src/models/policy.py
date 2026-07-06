@@ -123,7 +123,10 @@ def build_policy_from_cfg(m, n_tokens=3, latent=768):
                   source=m.get("flow_source", "past"),
                   ctx_layers=m.get("ctx_layers", 2),
                   source_noise=m.get("source_noise", 0.1))
-    return MODULES[m["name"]](**kw)
+    model = MODULES[m["name"]](**kw)
+    if m.get("proprio_token"):                # S1.v2 §4: 로봇상태 → latent 사영 토큰
+        model.proprio_proj = nn.Linear(int(m.get("proprio_dim", 9)), latent)
+    return model
 
 
 def policy_losses(zeta, chunk_fut, z_cur, z_next, ae, w):
