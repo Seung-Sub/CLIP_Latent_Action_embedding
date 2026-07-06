@@ -118,9 +118,11 @@ def main():
 
     # proprio 토큰 (S1.v2 §4): joint+gripper 9D → latent 사영 (사영층은 정책과 공동학습)
     use_proprio = m_cfg.get("proprio_token", False)
+    proprio_dropout = float(m_cfg.get("proprio_dropout", 0.0))  # (a1) 학습 중 토큰 제로화 확률
     p_mean = p_std = None
     if use_proprio:
-        P_eps = ds.build_proprio(files, stride=cfg["data"].get("stride", 2))
+        P_eps = ds.build_proprio(files, stride=cfg["data"].get("stride", 2),
+                                 fields=cfg["data"].get("proprio_fields"))
         P_tr = np.concatenate([P_eps[i] for i in tr_ids])
         P_va = np.concatenate([P_eps[i] for i in val_ids])
         p_mean = P_tr.mean(0)
@@ -219,9 +221,16 @@ def main():
         sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
     def forward(zp, zc, zn, aemb, cf, lang, wr, pr):
+        ptoks = []
+        if use_proprio:
+            pt = model.proprio_proj(pr)
+            if model.training and proprio_dropout > 0:   # (a1) 지름길 억제
+                keep = (torch.rand(len(pt), 1, device=pt.device)
+                        >= proprio_dropout).float()
+                pt = pt * keep
+            ptoks = [pt]
         toks = [zp, zc, aemb] + ([lang] if use_lang else []) \
-            + ([wr] if use_wrist else []) \
-            + ([model.proprio_proj(pr)] if use_proprio else [])
+            + ([wr] if use_wrist else []) + ptoks
         toks = torch.stack(toks, dim=1)               # (B, 3~5, 768)
         if is_flow:
             # lat 자리 = CFM 손실, act = FLD(ODE 샘플 디코딩). val은 고정시드로 결정화

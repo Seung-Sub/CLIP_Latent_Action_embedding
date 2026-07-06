@@ -15,9 +15,15 @@ from pathlib import Path
 PAT = re.compile(r"\[task (\d+)\] ep\s*(\d+) \| (SUCCESS|fail)\s*\| steps (\d+)")
 
 
-def parse(log_path):
+def parse(log_path, segment=None):
+    """segment: 로그에 여러 런이 이어진 경우 '리포트 저장:' 경계로 분할해
+    해당 인덱스 세그먼트만 파싱 (다중 런 로그의 교차 오염 방지)."""
+    text = Path(log_path).read_text()
+    if segment is not None:
+        parts = re.split(r"리포트 저장:.*\n", text)
+        text = parts[segment]
     per_task = {}
-    for m in PAT.finditer(Path(log_path).read_text()):
+    for m in PAT.finditer(text):
         tid, ep, res, steps = int(m[1]), int(m[2]), m[3], int(m[4])
         per_task.setdefault(tid, []).append((res == "SUCCESS", steps))
     return per_task
@@ -28,9 +34,11 @@ def main():
     ap.add_argument("log")
     ap.add_argument("json_path")
     ap.add_argument("--dry", action="store_true")
+    ap.add_argument("--segment", type=int, default=None,
+                    help="다중 런 로그의 세그먼트 인덱스 (0부터)")
     args = ap.parse_args()
 
-    eps = parse(args.log)
+    eps = parse(args.log, args.segment)
     r = json.loads(Path(args.json_path).read_text())
     n_expected = r["eval"]["n_per_task"]
     task_keys = list(r["eval"]["per_task"].keys())

@@ -1,0 +1,588 @@
+{
+ "mag_boundary": 9.65,
+ "dir_convention": {
+  "x+": "forward",
+  "x-": "backward",
+  "y+": "to the left",
+  "y-": "to the right",
+  "z+": "upward",
+  "z-": "downward",
+  "roll+": "roll the wrist to the left",
+  "roll-": "roll the wrist to the right",
+  "pitch+": "tilt the wrist up",
+  "pitch-": "tilt the wrist down",
+  "yaw+": "turn the wrist counterclockwise",
+  "yaw-": "turn the wrist clockwise"
+ },
+ "grip_suffix": {
+  "1": " and close the gripper",
+  "2": " and open the gripper"
+ },
+ "counts": {
+  "train": 392,
+  "holdout": 20
+ },
+ "version": "v2-f25",
+ "grip_only_rule": "grip \uc774\ubca4\ud2b8 AND \uc9c0\ubc30\ucd95 |\ub204\uc801| < \uacbd\uacc4*0.3 \u2192 grip \ub2e8\ub3c5 \ubb38\uc7a5",
+ "categories": {
+  "x+|S": {
+   "train": [
+    "move the gripper slightly forward",
+    "move the arm a little forward",
+    "shift the end effector a bit forward",
+    "push the hand slightly forward",
+    "slide the gripper a little forward",
+    "bring the arm a bit forward",
+    "move the arm a little ahead",
+    "move the hand a bit to the front",
+    "shift the end effector a little forward",
+    "shift the gripper a bit ahead",
+    "shift the arm a touch to the front",
+    "slide the hand a bit forward",
+    "slide the end effector a touch ahead",
+    "slide the gripper just a bit to the front",
+    "bring the arm a touch forward",
+    "bring the hand just a bit ahead",
+    "bring the end effector slightly to the front",
+    "take the gripper just a bit forward",
+    "take the arm slightly ahead",
+    "take the hand a little to the front",
+    "advance the end effector slightly forward",
+    "advance the gripper a little ahead",
+    "advance the arm a bit to the front",
+    "push the hand a little forward",
+    "push the end effector a bit ahead",
+    "push the gripper a touch to the front"
+   ],
+   "holdout": [
+    "nudge the hand forward just a touch"
+   ]
+  },
+  "x+|L": {
+   "train": [
+    "move the gripper a lot forward",
+    "move the arm far forward",
+    "shift the end effector a long distance forward",
+    "push the hand a lot forward",
+    "slide the gripper far forward",
+    "bring the arm a long distance forward",
+    "move the arm far ahead",
+    "move the hand way out to the front",
+    "shift the end effector far forward",
+    "shift the gripper way out ahead",
+    "shift the arm considerably to the front",
+    "slide the hand way out forward",
+    "slide the end effector considerably ahead",
+    "slide the gripper all the way to the front",
+    "bring the arm considerably forward",
+    "bring the hand all the way ahead",
+    "bring the end effector a lot to the front",
+    "take the gripper all the way forward",
+    "take the arm a lot ahead",
+    "take the hand far to the front",
+    "advance the end effector a lot forward",
+    "advance the gripper far ahead",
+    "advance the arm way out to the front",
+    "push the hand far forward",
+    "push the end effector way out ahead",
+    "push the gripper considerably to the front"
+   ],
+   "holdout": [
+    "advance the hand a great deal toward the front",
+    "drive the gripper firmly ahead"
+   ]
+  },
+  "x-|S": {
+   "train": [
+    "move the gripper slightly backward",
+    "move the arm a little backward",
+    "shift the end effector a bit backward",
+    "push the hand slightly backward",
+    "slide the gripper a little backward",
+    "bring the arm a bit backward",
+    "move the arm a little back",
+    "move the hand a bit to the rear",
+    "shift the end effector a little backward",
+    "shift the gripper a bit back",
+    "shift the arm a touch to the rear",
+    "slide the hand a bit backward",
+    "slide the end effector a touch back",
+    "slide the gripper just a bit to the rear",
+    "bring the arm a touch backward",
+    "bring the hand just a bit back",
+    "bring the end effector slightly to the rear",
+    "take the gripper just a bit backward",
+    "take the arm slightly back",
+    "take the hand a little to the rear",
+    "retract the end effector slightly backward",
+    "retract the gripper a little back",
+    "retract the arm a bit to the rear",
+    "pull the hand a little backward",
+    "pull the end effector a bit back",
+    "pull the gripper a touch to the rear"
+   ],
+   "holdout": [
+    "ease the gripper back a tiny bit"
+   ]
+  },
+  "x-|L": {
+   "train": [
+    "move the gripper a lot backward",
+    "move the arm far backward",
+    "shift the end effector a long distance backward",
+    "push the hand a lot backward",
+    "slide the gripper far backward",
+    "bring the arm a long distance backward",
+    "move the arm far back",
+    "move the hand way out to the rear",
+    "shift the end effector far backward",
+    "shift the gripper way out back",
+    "shift the arm considerably to the rear",
+    "slide the hand way out backward",
+    "slide the end effector considerably back",
+    "slide the gripper all the way to the rear",
+    "bring the arm considerably backward",
+    "bring the hand all the way back",
+    "bring the end effector a lot to the rear",
+    "take the gripper all the way backward",
+    "take the arm a lot back",
+    "take the hand far to the rear",
+    "retract the end effector a lot backward",
+    "retract the gripper far back",
+    "retract the arm way out to the rear",
+    "pull the hand far backward",
+    "pull the end effector way out back",
+    "pull the gripper considerably to the rear"
+   ],
+   "holdout": [
+    "pull the arm way back"
+   ]
+  },
+  "y+|S": {
+   "train": [
+    "move the gripper slightly to the left",
+    "move the arm a little to the left",
+    "shift the end effector a bit to the left",
+    "push the hand slightly to the left",
+    "slide the gripper a little to the left",
+    "bring the arm a bit to the left",
+    "move the arm a little leftward",
+    "move the hand a bit left",
+    "shift the end effector a little to the left",
+    "shift the gripper a bit leftward",
+    "shift the arm a touch left",
+    "slide the hand a bit to the left",
+    "slide the end effector a touch leftward",
+    "slide the gripper just a bit left",
+    "bring the arm a touch to the left",
+    "bring the hand just a bit leftward",
+    "bring the end effector slightly left",
+    "take the gripper just a bit to the left",
+    "take the arm slightly leftward",
+    "take the hand a little left",
+    "swing the end effector slightly to the left",
+    "swing the gripper a little leftward",
+    "swing the arm a bit left",
+    "shift the hand a little to the left",
+    "shift the end effector a bit leftward",
+    "shift the gripper a touch left"
+   ],
+   "holdout": [
+    "scoot the hand left a smidge",
+    "drift the hand slightly leftward"
+   ]
+  },
+  "y+|L": {
+   "train": [
+    "move the gripper a lot to the left",
+    "move the arm far to the left",
+    "shift the end effector a long distance to the left",
+    "push the hand a lot to the left",
+    "slide the gripper far to the left",
+    "bring the arm a long distance to the left",
+    "move the arm far leftward",
+    "move the hand way out left",
+    "shift the end effector far to the left",
+    "shift the gripper way out leftward",
+    "shift the arm considerably left",
+    "slide the hand way out to the left",
+    "slide the end effector considerably leftward",
+    "slide the gripper all the way left",
+    "bring the arm considerably to the left",
+    "bring the hand all the way leftward",
+    "bring the end effector a lot left",
+    "take the gripper all the way to the left",
+    "take the arm a lot leftward",
+    "take the hand far left",
+    "swing the end effector a lot to the left",
+    "swing the gripper far leftward",
+    "swing the arm way out left",
+    "shift the hand far to the left",
+    "shift the end effector way out leftward",
+    "shift the gripper considerably left"
+   ],
+   "holdout": [
+    "swing the arm out wide to the left side"
+   ]
+  },
+  "y-|S": {
+   "train": [
+    "move the gripper slightly to the right",
+    "move the arm a little to the right",
+    "shift the end effector a bit to the right",
+    "push the hand slightly to the right",
+    "slide the gripper a little to the right",
+    "bring the arm a bit to the right",
+    "move the arm a little rightward",
+    "move the hand a bit right",
+    "shift the end effector a little to the right",
+    "shift the gripper a bit rightward",
+    "shift the arm a touch right",
+    "slide the hand a bit to the right",
+    "slide the end effector a touch rightward",
+    "slide the gripper just a bit right",
+    "bring the arm a touch to the right",
+    "bring the hand just a bit rightward",
+    "bring the end effector slightly right",
+    "take the gripper just a bit to the right",
+    "take the arm slightly rightward",
+    "take the hand a little right",
+    "swing the end effector slightly to the right",
+    "swing the gripper a little rightward",
+    "swing the arm a bit right",
+    "shift the hand a little to the right",
+    "shift the end effector a bit rightward",
+    "shift the gripper a touch right"
+   ],
+   "holdout": [
+    "inch the arm over to the right"
+   ]
+  },
+  "y-|L": {
+   "train": [
+    "move the gripper a lot to the right",
+    "move the arm far to the right",
+    "shift the end effector a long distance to the right",
+    "push the hand a lot to the right",
+    "slide the gripper far to the right",
+    "bring the arm a long distance to the right",
+    "move the arm far rightward",
+    "move the hand way out right",
+    "shift the end effector far to the right",
+    "shift the gripper way out rightward",
+    "shift the arm considerably right",
+    "slide the hand way out to the right",
+    "slide the end effector considerably rightward",
+    "slide the gripper all the way right",
+    "bring the arm considerably to the right",
+    "bring the hand all the way rightward",
+    "bring the end effector a lot right",
+    "take the gripper all the way to the right",
+    "take the arm a lot rightward",
+    "take the hand far right",
+    "swing the end effector a lot to the right",
+    "swing the gripper far rightward",
+    "swing the arm way out right",
+    "shift the hand far to the right",
+    "shift the end effector way out rightward",
+    "shift the gripper considerably right"
+   ],
+   "holdout": [
+    "sweep the gripper right across the table"
+   ]
+  },
+  "z+|S": {
+   "train": [
+    "move the gripper slightly upward",
+    "move the arm a little upward",
+    "shift the end effector a bit upward",
+    "push the hand slightly upward",
+    "slide the gripper a little upward",
+    "bring the arm a bit upward",
+    "move the arm a little up",
+    "move the hand a bit higher",
+    "shift the end effector a little upward",
+    "shift the gripper a bit up",
+    "shift the arm a touch higher",
+    "slide the hand a bit upward",
+    "slide the end effector a touch up",
+    "slide the gripper just a bit higher",
+    "bring the arm a touch upward",
+    "bring the hand just a bit up",
+    "bring the end effector slightly higher",
+    "take the gripper just a bit upward",
+    "take the arm slightly up",
+    "take the hand a little higher",
+    "raise the end effector slightly upward",
+    "raise the gripper a little up",
+    "raise the arm a bit higher",
+    "lift the hand a little upward",
+    "lift the end effector a bit up",
+    "lift the gripper a touch higher"
+   ],
+   "holdout": [
+    "lift the gripper up a touch"
+   ]
+  },
+  "z+|L": {
+   "train": [
+    "move the gripper a lot upward",
+    "move the arm far upward",
+    "shift the end effector a long distance upward",
+    "push the hand a lot upward",
+    "slide the gripper far upward",
+    "bring the arm a long distance upward",
+    "move the arm far up",
+    "move the hand way out higher",
+    "shift the end effector far upward",
+    "shift the gripper way out up",
+    "shift the arm considerably higher",
+    "slide the hand way out upward",
+    "slide the end effector considerably up",
+    "slide the gripper all the way higher",
+    "bring the arm considerably upward",
+    "bring the hand all the way up",
+    "bring the end effector a lot higher",
+    "take the gripper all the way upward",
+    "take the arm a lot up",
+    "take the hand far higher",
+    "raise the end effector a lot upward",
+    "raise the gripper far up",
+    "raise the arm way out higher",
+    "lift the hand far upward",
+    "lift the end effector way out up",
+    "lift the gripper considerably higher"
+   ],
+   "holdout": [
+    "raise the hand high up"
+   ]
+  },
+  "z-|S": {
+   "train": [
+    "move the gripper slightly downward",
+    "move the arm a little downward",
+    "shift the end effector a bit downward",
+    "push the hand slightly downward",
+    "slide the gripper a little downward",
+    "bring the arm a bit downward",
+    "move the arm a little down",
+    "move the hand a bit lower",
+    "shift the end effector a little downward",
+    "shift the gripper a bit down",
+    "shift the arm a touch lower",
+    "slide the hand a bit downward",
+    "slide the end effector a touch down",
+    "slide the gripper just a bit lower",
+    "bring the arm a touch downward",
+    "bring the hand just a bit down",
+    "bring the end effector slightly lower",
+    "take the gripper just a bit downward",
+    "take the arm slightly down",
+    "take the hand a little lower",
+    "lower the end effector slightly downward",
+    "lower the gripper a little down",
+    "lower the arm a bit lower",
+    "drop the hand a little downward",
+    "drop the end effector a bit down",
+    "drop the gripper a touch lower"
+   ],
+   "holdout": [
+    "lower the hand a hair closer to the table",
+    "descend gently toward the surface"
+   ]
+  },
+  "z-|L": {
+   "train": [
+    "move the gripper a lot downward",
+    "move the arm far downward",
+    "shift the end effector a long distance downward",
+    "push the hand a lot downward",
+    "slide the gripper far downward",
+    "bring the arm a long distance downward",
+    "move the arm far down",
+    "move the hand way out lower",
+    "shift the end effector far downward",
+    "shift the gripper way out down",
+    "shift the arm considerably lower",
+    "slide the hand way out downward",
+    "slide the end effector considerably down",
+    "slide the gripper all the way lower",
+    "bring the arm considerably downward",
+    "bring the hand all the way down",
+    "bring the end effector a lot lower",
+    "take the gripper all the way downward",
+    "take the arm a lot down",
+    "take the hand far lower",
+    "lower the end effector a lot downward",
+    "lower the gripper far down",
+    "lower the arm way out lower",
+    "drop the hand far downward",
+    "drop the end effector way out down",
+    "drop the gripper considerably lower"
+   ],
+   "holdout": [
+    "drop the arm all the way down"
+   ]
+  },
+  "roll+|S": {
+   "train": [
+    "roll the wrist to the left slightly",
+    "roll the wrist to the left a little",
+    "roll the wrist to the left a bit",
+    "roll the wrist to the left a touch",
+    "roll the wrist to the left just a bit"
+   ],
+   "holdout": []
+  },
+  "roll+|L": {
+   "train": [
+    "roll the wrist to the left a lot",
+    "roll the wrist to the left far",
+    "roll the wrist to the left a long distance",
+    "roll the wrist to the left way out",
+    "roll the wrist to the left considerably",
+    "roll the wrist to the left all the way"
+   ],
+   "holdout": [
+    "rotate the wrist strongly leftward"
+   ]
+  },
+  "roll-|S": {
+   "train": [
+    "roll the wrist to the right slightly",
+    "roll the wrist to the right a little",
+    "roll the wrist to the right a bit",
+    "roll the wrist to the right a touch",
+    "roll the wrist to the right just a bit"
+   ],
+   "holdout": []
+  },
+  "roll-|L": {
+   "train": [
+    "roll the wrist to the right a lot",
+    "roll the wrist to the right far",
+    "roll the wrist to the right a long distance",
+    "roll the wrist to the right way out",
+    "roll the wrist to the right considerably",
+    "roll the wrist to the right all the way"
+   ],
+   "holdout": []
+  },
+  "pitch+|S": {
+   "train": [
+    "tilt the wrist up slightly",
+    "tilt the wrist up a little",
+    "tilt the wrist up a bit",
+    "tilt the wrist up a touch",
+    "tilt the wrist up just a bit"
+   ],
+   "holdout": []
+  },
+  "pitch+|L": {
+   "train": [
+    "tilt the wrist up a lot",
+    "tilt the wrist up far",
+    "tilt the wrist up a long distance",
+    "tilt the wrist up way out",
+    "tilt the wrist up considerably",
+    "tilt the wrist up all the way"
+   ],
+   "holdout": []
+  },
+  "pitch-|S": {
+   "train": [
+    "tilt the wrist down slightly",
+    "tilt the wrist down a little",
+    "tilt the wrist down a bit",
+    "tilt the wrist down a touch",
+    "tilt the wrist down just a bit"
+   ],
+   "holdout": []
+  },
+  "pitch-|L": {
+   "train": [
+    "tilt the wrist down a lot",
+    "tilt the wrist down far",
+    "tilt the wrist down a long distance",
+    "tilt the wrist down way out",
+    "tilt the wrist down considerably",
+    "tilt the wrist down all the way"
+   ],
+   "holdout": [
+    "angle the wrist sharply downward"
+   ]
+  },
+  "yaw+|S": {
+   "train": [
+    "turn the wrist counterclockwise slightly",
+    "turn the wrist counterclockwise a little",
+    "turn the wrist counterclockwise a bit",
+    "turn the wrist counterclockwise a touch",
+    "turn the wrist counterclockwise just a bit"
+   ],
+   "holdout": []
+  },
+  "yaw+|L": {
+   "train": [
+    "turn the wrist counterclockwise a lot",
+    "turn the wrist counterclockwise far",
+    "turn the wrist counterclockwise a long distance",
+    "turn the wrist counterclockwise way out",
+    "turn the wrist counterclockwise considerably",
+    "turn the wrist counterclockwise all the way"
+   ],
+   "holdout": [
+    "spin the wrist a good amount counterclockwise"
+   ]
+  },
+  "yaw-|S": {
+   "train": [
+    "turn the wrist clockwise slightly",
+    "turn the wrist clockwise a little",
+    "turn the wrist clockwise a bit",
+    "turn the wrist clockwise a touch",
+    "turn the wrist clockwise just a bit"
+   ],
+   "holdout": []
+  },
+  "yaw-|L": {
+   "train": [
+    "turn the wrist clockwise a lot",
+    "turn the wrist clockwise far",
+    "turn the wrist clockwise a long distance",
+    "turn the wrist clockwise way out",
+    "turn the wrist clockwise considerably",
+    "turn the wrist clockwise all the way"
+   ],
+   "holdout": []
+  },
+  "grip+": {
+   "train": [
+    "close the gripper",
+    "grasp with the gripper",
+    "shut the gripper fingers",
+    "close the fingers",
+    "squeeze the gripper shut",
+    "grip the object",
+    "tighten the gripper"
+   ],
+   "holdout": [
+    "clamp the fingers shut"
+   ]
+  },
+  "grip-": {
+   "train": [
+    "open the gripper",
+    "let go with the gripper",
+    "spread the gripper fingers",
+    "open the fingers",
+    "let the object go",
+    "release the gripper",
+    "widen the gripper"
+   ],
+   "holdout": [
+    "release the grasp"
+   ]
+  }
+ }
+}

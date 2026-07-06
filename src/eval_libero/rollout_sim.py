@@ -176,8 +176,10 @@ def main():
                         + ([torch.tensor(encode_wrist(obs)[None], device=device)]
                            if wrist_cam else [])
                     if proprio is not None:
-                        p = np.concatenate([obs["robot0_joint_pos"],
-                                            obs["robot0_gripper_qpos"]])
+                        _pmap = {"joint_states": "robot0_joint_pos",
+                                 "gripper_states": "robot0_gripper_qpos"}
+                        p = np.concatenate([obs[_pmap[f]]
+                                            for f in proprio["fields"]])
                         p = (p - proprio["mean"]) / proprio["std"]
                         toks.append(policy.proprio_proj(
                             torch.tensor(p[None], dtype=torch.float32,

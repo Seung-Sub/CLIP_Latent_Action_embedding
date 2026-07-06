@@ -107,18 +107,23 @@ class Siglip2Anchor(BaseAnchor):
         self.dim = self.model.config.vision_config.hidden_size    # 1152
         self.dim_text = self.dim
 
+    @staticmethod
+    def _tensor(out):
+        """transformers 버전에 따라 get_*_features가 텐서 또는 출력 객체 반환."""
+        return out if torch.is_tensor(out) else out.pooler_output
+
     @torch.no_grad()
     def encode_images(self, pil_images):
         inputs = self.processor(images=pil_images, return_tensors="pt").to(self.device)
-        emb = self.model.get_image_features(
-            pixel_values=inputs["pixel_values"].to(self.model.dtype))
+        emb = self._tensor(self.model.get_image_features(
+            pixel_values=inputs["pixel_values"].to(self.model.dtype)))
         return {"embeds": self._post(emb), "tokens": None}
 
     @torch.no_grad()
     def encode_texts(self, texts):
         inputs = self.processor(text=texts, return_tensors="pt", padding="max_length",
                                 truncation=True).to(self.device)
-        emb = self.model.get_text_features(input_ids=inputs["input_ids"])
+        emb = self._tensor(self.model.get_text_features(input_ids=inputs["input_ids"]))
         return {"embeds": self._post(emb), "tokens": None}
 
 

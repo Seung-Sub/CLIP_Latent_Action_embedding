@@ -62,7 +62,9 @@ def load_models(cfg, device):
                                    latent=latent).to(device).eval()
     policy.load_state_dict(ck2["state_dict"])
     wrist_cam = ck2["config"]["data"].get("wrist_camera") if use_wrist else None
-    proprio = ({"mean": ck2["p_mean"], "std": ck2["p_std"]}
+    proprio = ({"mean": ck2["p_mean"], "std": ck2["p_std"],
+                "fields": ck2["config"]["data"].get(
+                    "proprio_fields") or ["joint_states", "gripper_states"]}
                if m.get("proprio_token") else None)
     return (ae, policy, ck1["a_mean"], ck1["a_std"], ck1["n_chunk"],
             ck1["action_dim"], use_lang, ck1.get("chunk_repr", "time"),

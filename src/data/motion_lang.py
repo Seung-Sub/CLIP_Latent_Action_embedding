@@ -98,12 +98,68 @@ def _build_vocab():
             "categories": cats}
 
 
-def load_vocab():
-    if not VOCAB_PATH.exists():
-        VOCAB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        VOCAB_PATH.write_text(json.dumps(_build_vocab(), indent=1))
-        print(f"motion_lang.json 생성(고정): {VOCAB_PATH}")
-    return json.loads(VOCAB_PATH.read_text())
+def _build_vocab_v2():
+    """F2.5 증강판 — prior 학습 전용 (phase1 팔은 v1 고정, hold-out 불가침).
+
+    v1 대비: 방향 동의어·방향 전용 동사·부사 확대 → 카테고리당 문장 다양성 ~4배.
+    hold-out 20종과의 완전 일치 문장은 생성 후 제거로 보장.
+    """
+    v1 = _build_vocab()
+    holdout_all = {s for c in v1["categories"].values() for s in c["holdout"]}
+    subjects = ["the gripper", "the arm", "the hand", "the end effector"]
+    small = ["slightly", "a little", "a bit", "a touch", "just a bit"]
+    large = ["a lot", "far", "way out", "considerably", "all the way"]
+    dir_words = {("x", 1): ["forward", "ahead", "to the front"],
+                 ("x", -1): ["backward", "back", "to the rear"],
+                 ("y", 1): ["to the left", "leftward", "left"],
+                 ("y", -1): ["to the right", "rightward", "right"],
+                 ("z", 1): ["upward", "up", "higher"],
+                 ("z", -1): ["downward", "down", "lower"]}
+    dir_verbs = {("x", 1): ["advance", "push"], ("x", -1): ["retract", "pull"],
+                 ("y", 1): ["swing", "shift"], ("y", -1): ["swing", "shift"],
+                 ("z", 1): ["raise", "lift"], ("z", -1): ["lower", "drop"]}
+    base_verbs = ["move", "shift", "slide", "bring", "take"]
+    cats = {}
+    for ax in AXES:
+        for sgn in (1, -1):
+            for mag, advs in (("S", small), ("L", large)):
+                key = f"{ax}{'+' if sgn > 0 else '-'}|{mag}"
+                sents = list(v1["categories"][key]["train"])
+                if ax in ("x", "y", "z"):
+                    for i, v in enumerate(base_verbs + dir_verbs[(ax, sgn)]):
+                        for j, d in enumerate(dir_words[(ax, sgn)]):
+                            adv = advs[(i + j) % len(advs)]
+                            subj = subjects[(i * 3 + j) % len(subjects)]
+                            sents.append(f"{v} {subj} {adv} {d}")
+                else:
+                    base = ROT_WORDS[(ax, sgn)]
+                    sents += [f"{base} {a}" for a in advs]
+                sents = [x for x in dict.fromkeys(sents) if x not in holdout_all]
+                cats[key] = {"train": sents,
+                             "holdout": v1["categories"][key]["holdout"]}
+    for gk, extra in (("grip+", ["close the fingers", "squeeze the gripper shut",
+                                 "grip the object", "tighten the gripper"]),
+                      ("grip-", ["open the fingers", "let the object go",
+                                 "release the gripper", "widen the gripper"])):
+        sents = v1["categories"][gk]["train"] + extra
+        cats[gk] = {"train": [x for x in sents if x not in holdout_all],
+                    "holdout": v1["categories"][gk]["holdout"]}
+    n_train = sum(len(c["train"]) for c in cats.values())
+    return {**{k: v for k, v in v1.items() if k != "categories"},
+            "version": "v2-f25", "counts": {"train": n_train,
+            "holdout": sum(len(c["holdout"]) for c in cats.values())},
+            "grip_only_rule": "grip 이벤트 AND 지배축 |누적| < 경계*0.3 → grip 단독 문장",
+            "categories": cats}
+
+
+def load_vocab(version="v1"):
+    path = VOCAB_PATH if version == "v1" else         VOCAB_PATH.with_name("motion_lang_v2.json")
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        builder = _build_vocab if version == "v1" else _build_vocab_v2
+        path.write_text(json.dumps(builder(), indent=1))
+        print(f"{path.name} 생성(고정)")
+    return json.loads(path.read_text())
 
 
 def chunk_category(chunk_raw):
@@ -126,8 +182,9 @@ def chunk_category(chunk_raw):
 class MotionSentences:
     """청크 → 고정 문장 할당 + 전체 고유 문장 임베딩 테이블."""
 
-    def __init__(self):
-        self.vocab = load_vocab()
+    def __init__(self, version="v1"):
+        self.version = version
+        self.vocab = load_vocab(version)
         self.sentences = []                   # 고유 문장 (train 조합 전체)
         self.index = {}                       # (cat, variant, grip) -> sent_id
         for cat, c in self.vocab["categories"].items():
@@ -144,6 +201,9 @@ class MotionSentences:
         ids = np.empty(len(chunks_raw), dtype=np.int64)
         for i, ch in enumerate(chunks_raw):
             cat, grip = chunk_category(ch)
+            if (self.version != "v1" and grip != 0
+                    and np.abs(ch[:, :6].sum(0)).max() < MAG_BOUNDARY * 0.3):
+                cat = "grip+" if grip == 1 else "grip-"   # v2: grip 단독 할당 (버그 수정)
             n_var = len(self.vocab["categories"][cat]["train"])
             if cat.startswith("grip"):
                 grip = 0

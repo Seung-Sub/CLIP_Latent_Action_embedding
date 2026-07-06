@@ -186,17 +186,18 @@ class LiberoDataset:
             out.append(tuple(x.astype(np.float32) for x in arrs))
         return out
 
-    def build_proprio(self, files=None, stride=2):
-        """정책 proprio 토큰용 (S1.v2 §4): joint(7)+gripper(2), no-op 필터·starts를
-        build_policy_samples와 동일하게 적용해 샘플 정렬 보장."""
+    def build_proprio(self, files=None, stride=2, fields=None):
+        """정책 proprio 토큰용 (S1.v2 §4): 기본 joint(7)+gripper(2), no-op 필터·starts를
+        build_policy_samples와 동일하게 적용해 샘플 정렬 보장.
+        fields: obs 키 리스트로 구성 선택 (예: ["gripper_states"] = (a2) 2D 변형)."""
         files = files or self.episode_files()
+        fields = fields or ["joint_states", "gripper_states"]
         out = []
         for ep in files:
             path, demo = ep
             with h5py.File(path, "r") as h:
-                j = h[f"data/{demo}/obs/joint_states"][:]
-                g = h[f"data/{demo}/obs/gripper_states"][:]
-            P = np.concatenate([j, g], axis=1)
+                P = np.concatenate([h[f"data/{demo}/obs/{f}"][:] for f in fields],
+                                   axis=1)
             P = P[self.keep_indices(self.load_actions(ep))]
             starts = list(range(0, len(P) - self.span, stride))
             out.append(np.stack([P[t] for t in starts]).astype(np.float32))

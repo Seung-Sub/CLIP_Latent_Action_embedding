@@ -40,11 +40,20 @@ def load_arm(arm, device):
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--vocab", default="v1", choices=["v1", "v2"],
+                    help="v2 = F2.5 증강 어휘 (prior 학습 전용, hold-out 불가침)")
+    ap.add_argument("--arms", default=None, help="쉼표 구분 (기본: 전체)")
+    args = ap.parse_args()
+    global ARMS
+    if args.arms:
+        ARMS = args.arms.split(",")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     cfg = yaml.safe_load(open(WS / "configs" / "phase1_libero.yaml"))
     ds = LiberoDataset(cfg)
     clip = get_anchor(cfg)
-    ms = MotionSentences()
+    ms = MotionSentences(version=args.vocab)
 
     rng = np.random.RandomState(cfg["train"]["seed"])
     files = ds.episode_files()
@@ -81,46 +90,50 @@ def main():
             Zeta = torch.cat(Zeta)
         X = torch.tensor(S_all[ids], device=device)       # (N, 768)
 
-        prior = nn.Sequential(nn.LayerNorm(768), nn.Linear(768, 1024),
-                              nn.GELU(), nn.Linear(1024, 768)).to(device)
-        opt = torch.optim.Adam(prior.parameters(), lr=1e-3)
-        idx = np.arange(len(X))
-        for ep in range(30):
-            np.random.shuffle(idx)
-            for i in range(0, len(idx), 1024):
-                b = idx[i:i+1024]
-                pred = prior(X[b])
-                tgt = Zeta[b]
-                cos = nn.functional.cosine_similarity(pred, tgt, dim=1)
-                loss = nn.functional.mse_loss(pred, tgt) + 0.5 * (1 - cos).mean()
-                opt.zero_grad(); loss.backward(); opt.step()
-
-        prior.eval()
-        hits = total = 0
-        per_sent = {}
-        with torch.no_grad():
-            zeta_h = prior(torch.tensor(S_hold, dtype=torch.float32,
-                                        device=device))
-            for si in range(len(holdout_sents)):
-                zeta = zeta_h[si:si+1].expand(len(Zs), -1)
-                chunks = ae.h(zeta, Zs).cpu().numpy() * ck["a_std"] + ck["a_mean"]
-                ok = 0
-                for ch in chunks:
-                    cat, grip = chunk_category(ch)
-                    if holdout_cats[si].startswith("grip"):
-                        ok += (grip == 1) if holdout_cats[si] == "grip+" else (grip == 2)
-                    else:
-                        ok += cat.split("|")[0] == holdout_cats[si].split("|")[0]
-                hits += ok; total += len(Zs)
-                per_sent[holdout_sents[si]] = round(ok / len(Zs), 3)
-        acc = hits / total
-        results[arm] = {"dir_acc": round(acc, 4), "per_sentence": per_sent,
-                        "prior": "LN-768-1024-GELU-768, 30ep, MSE+0.5(1-cos)"}
-        print(f"[{arm:5s}] F2 방향정확도 {100*acc:.1f}% "
+        seed_accs = []
+        for seed in range(5):                     # 시드 앙상블 (S1.v2 재채점 안정화)
+            torch.manual_seed(seed)
+            np.random.seed(seed)
+            prior = nn.Sequential(nn.LayerNorm(768), nn.Linear(768, 1024),
+                                  nn.GELU(), nn.Linear(1024, 768)).to(device)
+            opt = torch.optim.Adam(prior.parameters(), lr=1e-3)
+            idx = np.arange(len(X))
+            for ep in range(30):
+                np.random.shuffle(idx)
+                for i in range(0, len(idx), 1024):
+                    b = idx[i:i+1024]
+                    pred = prior(X[b])
+                    tgt = Zeta[b]
+                    cos = nn.functional.cosine_similarity(pred, tgt, dim=1)
+                    loss = nn.functional.mse_loss(pred, tgt)                         + 0.5 * (1 - cos).mean()
+                    opt.zero_grad(); loss.backward(); opt.step()
+            prior.eval()
+            hits = total = 0
+            with torch.no_grad():
+                zeta_h = prior(torch.tensor(S_hold, dtype=torch.float32,
+                                            device=device))
+                for si in range(len(holdout_sents)):
+                    zeta = zeta_h[si:si+1].expand(len(Zs), -1)
+                    chunks = ae.h(zeta, Zs).cpu().numpy() * ck["a_std"]                         + ck["a_mean"]
+                    ok = 0
+                    for ch in chunks:
+                        cat, grip = chunk_category(ch)
+                        if holdout_cats[si].startswith("grip"):
+                            ok += (grip == 1) if holdout_cats[si] == "grip+"                                 else (grip == 2)
+                        else:
+                            ok += cat.split("|")[0] == holdout_cats[si].split("|")[0]
+                    hits += ok; total += len(Zs)
+            seed_accs.append(hits / total)
+        acc, std = float(np.mean(seed_accs)), float(np.std(seed_accs))
+        results[arm] = {"dir_acc_mean": round(acc, 4), "dir_acc_std": round(std, 4),
+                        "per_seed": [round(a, 4) for a in seed_accs],
+                        "prior": "LN-768-1024-GELU-768, 30ep, 5시드"}
+        print(f"[{arm:5s}] F2 방향정확도 {100*acc:.1f}%±{100*std:.1f} "
               f"({'PASS' if acc >= 0.5 else 'below'} 기준 50%)")
         del ae; torch.cuda.empty_cache()
 
-    p = WS / "outputs" / "report" / "c8_gapfix_f2.json"
+    p = WS / "outputs" / "report" / (
+        "c8_gapfix_f2.json" if args.vocab == "v1" else "c8_gapfix_f25.json")
     p.write_text(json.dumps(results, indent=1, ensure_ascii=False))
     print(f"저장: {p}")
 
