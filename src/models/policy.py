@@ -126,6 +126,10 @@ def build_policy_from_cfg(m, n_tokens=3, latent=768):
     model = MODULES[m["name"]](**kw)
     if m.get("proprio_token"):                # S1.v2 §4: 로봇상태 → latent 사영 토큰
         model.proprio_proj = nn.Linear(int(m.get("proprio_dim", 9)), latent)
+    if m.get("lang_dim") and int(m["lang_dim"]) != latent:
+        # 교차 앵커 언어 어댑터: 무텍스트 앵커(DINOv2 등)에서 CLIP 텍스트(768)를
+        # anchor.dim으로 사영 (매트릭스 필수 요소 — L3-lite, 정책과 공동학습)
+        model.lang_proj = nn.Linear(int(m["lang_dim"]), latent)
     return model
 
 

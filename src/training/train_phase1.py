@@ -152,7 +152,8 @@ def main():
                     m_cfg["layers"], m_cfg["dropout"],
                     m_cfg.get("state_cond", True),
                     align_mode=align_mode,
-                    contrast_w=float(w.get("contrast", 0.0))).to(device)
+                    contrast_w=float(w.get("contrast", 0.0)),
+                    contrast_head=m_cfg.get("contrast_head", False)).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"DeltaAE params: {n_params/1e6:.2f}M (encoder cnn/{m_cfg['hidden']}x"
           f"{m_cfg['layers']}, decoder mlp/{m_cfg['hidden']}x{m_cfg['layers']})")

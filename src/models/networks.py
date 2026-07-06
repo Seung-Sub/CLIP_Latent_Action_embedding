@@ -72,7 +72,7 @@ class DeltaAE(nn.Module):
 
     def __init__(self, action_dim, n_chunk, latent_dim=768, hidden=512,
                  layers=4, dropout=0.0, state_cond=True,
-                 align_mode="dz", contrast_w=0.0):
+                 align_mode="dz", contrast_w=0.0, contrast_head=False):
         super().__init__()
         self.g = ChunkEncoder(action_dim, latent_dim, hidden, layers,
                               dropout, state_cond)
@@ -85,9 +85,16 @@ class DeltaAE(nn.Module):
             # 학습형 온도 (CLIP 관례: logit_scale = log(1/T), T init 0.07)
             import numpy as np
             self.logit_scale = nn.Parameter(torch.tensor(float(np.log(1 / 0.07))))
+            # 노름 분리 (레시피 변형): contrastive를 전용 투영 위에서 계산해
+            # 회귀(비정규화 Δz)·디코드 기하와 분리 (SimCLR 투영헤드 원리)
+            if contrast_head:
+                self.contrast_proj = nn.Linear(latent_dim, latent_dim)
 
     def info_nce(self, ghat, text_emb, sent_ids):
-        """SupCon식 다중 양성 InfoNCE. text_emb (B, d), sent_ids (B,)."""
+        """SupCon식 다중 양성 InfoNCE. text_emb (B, d), sent_ids (B,).
+        contrast_proj 존재 시 g를 투영 후 정규화 (노름 분리 레시피)."""
+        if hasattr(self, "contrast_proj"):
+            ghat = self.contrast_proj(ghat)
         gn = nn.functional.normalize(ghat, dim=1)
         tn = nn.functional.normalize(text_emb, dim=1)
         logits = gn @ tn.T * self.logit_scale.exp().clamp(max=100.0)

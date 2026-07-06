@@ -112,6 +112,10 @@ def main():
      repr_kind, wrist_cam, proprio) = load_models(cfg, device)
     ds = LiberoDataset(cfg)          # span/resample 재사용
     clip = get_anchor(cfg)
+    lang_enc = clip
+    if use_lang and not clip.has_text:
+        from core.anchor import ClipAnchor
+        lang_enc = ClipAnchor()      # 교차 앵커 언어 폴백 (policy.lang_proj가 사영)
     span, H = ds.span, args.exec_horizon
 
     suite = benchmark.get_benchmark_dict()[args.suite]()
@@ -127,8 +131,11 @@ def main():
         env = OffScreenRenderEnv(bddl_file_name=bddl,
                                  camera_heights=128, camera_widths=128)
         init_states = suite.get_task_init_states(tid)
-        lang = torch.tensor(clip.encode_texts([task.language])["embeds"][0][None],
+        lang = torch.tensor(lang_enc.encode_texts([task.language])["embeds"][0][None],
                             device=device) if use_lang else None
+        if lang is not None and hasattr(policy, "lang_proj"):
+            with torch.no_grad():
+                lang = policy.lang_proj(lang)
         succ, infer_ms = [], []
 
         def frame(obs):

@@ -95,10 +95,12 @@ def main():
     n_val = 1 if args.smoke else (max(1, round(len(files) * v)) if v < 1 else int(v))
     val_ids, tr_ids = perm[:n_val], perm[n_val:]
     clip = get_anchor(cfg)
-    use_lang_pre = cfg["module"].get("lang_token", False)
-    if use_lang_pre and not clip.has_text:
-        raise SystemExit(f"anchor {clip.id}: has_text=False → lang_token 사용 불가 "
-                         "(L0 무언어 조건으로 실행하거나 언어 정렬 앵커 선택)")
+    lang_enc = clip
+    if cfg["module"].get("lang_token", False) and not clip.has_text:
+        # 무텍스트 앵커(DINOv2 등): CLIP 텍스트 인코더 폴백 + 정책측 lang_proj 어댑터
+        from core.anchor import ClipAnchor
+        lang_enc = ClipAnchor()
+        print(f"lang 인코더 폴백: {lang_enc.id} (anchor {clip.id}는 has_text=False)")
     print(f"anchor: {clip.cache_key} | 삼중쌍 구성 중 (임베딩 캐시 재사용)...")
     eps = ds.build_policy_samples(clip, files, stride=cfg["data"].get("stride", 2))
 
@@ -134,8 +136,10 @@ def main():
     # 언어 토큰 (멀티태스크 조건화): 에피소드별 지시문 임베딩을 샘플 수만큼 복제
     use_lang = m_cfg.get("lang_token", False)
     if use_lang:
-        lang_per_ep = [ds.instruction_embedding(clip, files[i])
+        lang_per_ep = [ds.instruction_embedding(lang_enc, files[i])
                        for i in range(len(files))]
+        if lang_per_ep[0].shape[-1] != latent:
+            m_cfg["lang_dim"] = int(lang_per_ep[0].shape[-1])   # → policy.lang_proj
 
         def stack_lang(ids):
             return np.concatenate([
@@ -221,6 +225,8 @@ def main():
         sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
     def forward(zp, zc, zn, aemb, cf, lang, wr, pr):
+        if use_lang and hasattr(model, "lang_proj"):
+            lang = model.lang_proj(lang)
         ptoks = []
         if use_proprio:
             pt = model.proprio_proj(pr)
@@ -297,7 +303,10 @@ def main():
     # ---- 평가 ----
     model.eval()
     with torch.no_grad():
-        toks = [val_t[0], val_t[1], val_t[3]] + ([val_t[5]] if use_lang else []) \
+        lang_v = val_t[5]
+        if use_lang and hasattr(model, "lang_proj"):
+            lang_v = model.lang_proj(lang_v)
+        toks = [val_t[0], val_t[1], val_t[3]] + ([lang_v] if use_lang else []) \
             + ([val_t[6]] if use_wrist else []) \
             + ([model.proprio_proj(val_t[7])] if use_proprio else [])
         gen = torch.Generator(device=device)
