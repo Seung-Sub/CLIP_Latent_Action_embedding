@@ -1,4 +1,6 @@
-# Phase 2 — 잠재 정책 f (그리드 46런 확정 레시피: MAE 0.44±0.03°)
+# Phase 2 (ALOHA) — ★기본: flow(past) + ctx4, time 표현 (DCT는 연구 보류로 제외)
+# 캠페인 참고치(docs/upgrade_report.md): DCT 조합 시 100롤 시드3 평균 58/35.7 (기준 43/28).
+# time 표현의 flow+ctx4 실측치는 아래 checkpoint 학습 시 기록. 베이스라인은 phase2_mlp.yaml.
 phase1_ckpt: ~/clip_ws/checkpoints/phase1_delta_ae.pt
 
 data:
@@ -9,19 +11,22 @@ data:
   chunk_sec: 0.32
   n_chunk: 16
   stride: 2
-  val_episodes: 0.2            # 비율(<1) 또는 개수(≥1)
+  val_episodes: 0.2
   cache_dir: ~/clip_ws/outputs/cache/act_sim_emb
 
 module:
-  name: mlp                    # 그리드 승자 (> cls > pma)
-  d_model: 1024                # 폭은 크게, 깊이는 4가 최적
-  layers: 4
-  heads: 8                     # mlp에선 미사용
+  name: flow                   # ★생성형 헤드 (CFM+FLD) — insertion 강건성 담당
+  flow_source: past            # g(A_past)에서 수송 (A2A식) — 일관 승자
+  flow_steps: 6
+  source_noise: 0.1
+  d_model: 1024                # 1536은 무이득 (aloha)
+  layers: 4                    # v_net 잔차블록
+  ctx_layers: 4                # ★aloha 최적 마무리 손잡이 (기본 2 대비 합산 82→96)
 
 loss:
-  lat: 0.5                     # 잠재 GT g(A_fut,z_t) — 보조 (latcos 0.965 확보)
-  act: 1.0                     # 디코딩 액션 L1 — 주 (S1 절제 결론)
-  wm: 0.0                      # Δz_fut 보조항 기각
+  lat: 0.5                     # flow에선 CFM 가중
+  act: 1.0                     # FLD 디코딩 액션 L1
+  wm: 0.0
 
 train:
   batch_size: 256
@@ -31,8 +36,8 @@ train:
   warmup_steps: 500
   epochs: 50
   early_stop_patience: 20
-  seed: 0
+  seed: 1                      # 캠페인 승자 시드 (시드 분산 큼 — 최종 선택은 폐루프로)
   past_noise: 0.05           # 과거청크 노이즈 주입 (폐루프 분포이동 대응)
-  checkpoint: ~/clip_ws/checkpoints/phase2_policy.pt
+  checkpoint: ~/clip_ws/checkpoints/phase2_aloha_fm.pt
 
-wandb: {enabled: true, project: clipvp, mode: online, run_name: phase2}
+wandb: {enabled: true, project: clipvp, mode: online, run_name: phase2_aloha_fm}

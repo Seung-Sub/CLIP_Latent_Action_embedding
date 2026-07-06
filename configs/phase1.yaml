@@ -1,4 +1,6 @@
-# Phase 1 — 액션청크 <-> CLIP 이미지델타(Δz) 결합 AE (확정 레시피, 400eps 검증: R² 0.985)
+# Phase 1 (ALOHA) — 액션청크 <-> Δz 결합 AE (time 표현 기본)
+# chunk_repr: dct(FAST식 주파수 표현)는 캠페인에서 aloha 폐루프 +8pp였으나
+# 연구 보류 상태 — 코드(src/core/chunkrep.py)는 유지, 기본 미사용. 재개 시 dct로 변경.
 data:
   root:
     - ~/clip_ws/data/act_sim/sim_transfer_cube
@@ -6,7 +8,8 @@ data:
   camera: angle                # 정면 3인칭 단일 카메라
   chunk_sec: 0.32              # 50Hz × 16스텝
   n_chunk: 16
-  val_episodes: 0.2            # 비율(<1) 또는 개수(≥1). 두 작업 합산 400개 기준 80개
+  chunk_repr: time             # time(기본) | dct(연구 보류) — 하류 전체가 phase1 ckpt 키를 따름
+  val_episodes: 0.2            # 비율(<1) 또는 개수(≥1)
   cache_dir: ~/clip_ws/outputs/cache/act_sim_emb
 
 model:
@@ -32,4 +35,4 @@ train:
   seed: 0
   checkpoint: ~/clip_ws/checkpoints/phase1_delta_ae.pt
 
-wandb: {enabled: true, project: clipvp, mode: online, run_name: phase1}
+wandb: {enabled: true, project: clipvp, mode: online, run_name: phase1_aloha}

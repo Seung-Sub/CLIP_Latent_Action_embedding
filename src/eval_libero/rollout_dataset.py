@@ -31,10 +31,11 @@ matplotlib.rcParams.update({"font.family": ["Noto Sans CJK KR", "sans-serif"],
                             "axes.unicode_minus": False})
 import matplotlib.pyplot as plt
 
+from core import chunkrep
 from core.anchor import get_anchor
 from data.libero import LiberoDataset
 from models.networks import DeltaAE
-from models.policy import build_policy
+from models.policy import build_policy_from_cfg
 
 WS = Path(__file__).resolve().parents[2]
 DIM_NAMES = ["Δx", "Δy", "Δz", "Δroll", "Δpitch", "Δyaw", "gripper"]
@@ -55,13 +56,15 @@ def load_models(cfg, device):
                      map_location="cpu", weights_only=False)
     m = ck2["config"]["module"]
     use_lang = m.get("lang_token", False)
-    policy = build_policy(m["name"], m["d_model"], m["layers"],
-                          m.get("heads", 8),
-                          n_tokens=4 if use_lang else 3,
-                          latent=latent).to(device).eval()
+    use_wrist = m.get("wrist_token", False)
+    policy = build_policy_from_cfg(
+        m, n_tokens=3 + int(use_lang) + int(use_wrist),
+        latent=latent).to(device).eval()
     policy.load_state_dict(ck2["state_dict"])
+    wrist_cam = ck2["config"]["data"].get("wrist_camera") if use_wrist else None
     return (ae, policy, ck1["a_mean"], ck1["a_std"], ck1["n_chunk"],
-            ck1["action_dim"], use_lang)
+            ck1["action_dim"], use_lang, ck1.get("chunk_repr", "time"),
+            wrist_cam)
 
 
 def main():
@@ -73,7 +76,8 @@ def main():
 
     cfg = yaml.safe_load(open(args.config))
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    ae, policy, a_mean, a_std, n_chunk, act_dim, use_lang = load_models(cfg, device)
+    (ae, policy, a_mean, a_std, n_chunk, act_dim, use_lang,
+     repr_kind, wrist_cam) = load_models(cfg, device)
     ds = LiberoDataset(cfg)
     clip = get_anchor(cfg)
 
@@ -88,6 +92,7 @@ def main():
 
     acts = ds.load_actions(ep)
     Z = ds.embeddings(clip, ep)
+    Zw = ds.embeddings(clip, ep, wrist_cam) if wrist_cam else None
     lang = torch.tensor(ds.instruction_embedding(clip, ep)[None],
                         device=device) if use_lang else None
     T = len(acts)
@@ -102,11 +107,15 @@ def main():
         while t + span <= T:
             z_prev = torch.tensor(Z[t - span][None], device=device)
             z_cur = torch.tensor(Z[t][None], device=device)
-            past = norm(ds.resample_chunk(acts[t - span:t]))[None]
+            past = chunkrep.to_repr(
+                norm(ds.resample_chunk(acts[t - span:t])), repr_kind)[None]
             a_emb = ae.g(torch.tensor(past, device=device), z_prev)
-            toks = [z_prev, z_cur, a_emb] + ([lang] if use_lang else [])
+            toks = [z_prev, z_cur, a_emb] + ([lang] if use_lang else []) \
+                + ([torch.tensor(Zw[t][None], device=device)]
+                   if wrist_cam else [])
             zeta = policy(torch.stack(toks, dim=1))
-            ahat = ae.h(zeta, z_cur).cpu().numpy()[0] * a_std + a_mean
+            ahat = chunkrep.from_repr(ae.h(zeta, z_cur).cpu().numpy()[0],
+                                      repr_kind) * a_std + a_mean
             n_exec = min(H, T - t)
             pred[t:t + n_exec] = ahat[:n_exec]
             t += H

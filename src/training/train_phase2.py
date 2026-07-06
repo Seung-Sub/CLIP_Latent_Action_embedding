@@ -23,10 +23,11 @@ import torch
 import yaml
 from torch.utils.data import DataLoader, TensorDataset
 
+from core import chunkrep
 from core.anchor import get_anchor
 from data import get_dataset
 from models.networks import DeltaAE
-from models.policy import build_policy, policy_losses
+from models.policy import FlowPolicy, build_policy_from_cfg, policy_losses
 
 WS = Path(__file__).resolve().parents[2]
 CFG_PATH = WS / "configs" / "phase2.yaml"
@@ -72,6 +73,7 @@ def main():
     n_chunk, act_dim = ck["n_chunk"], ck["action_dim"]
     a_mean, a_std = ck["a_mean"], ck["a_std"]
     latent = ck.get("latent_dim", p1["model"]["latent_dim"])
+    repr_kind = ck.get("chunk_repr", "time")      # phase1이 정한 청크 표현을 따름
     ae = DeltaAE(act_dim, n_chunk, latent,
                  p1["model"]["hidden"], p1["model"]["layers"],
                  p1["model"]["dropout"],
@@ -101,10 +103,18 @@ def main():
     eps = ds.build_policy_samples(clip, files, stride=cfg["data"].get("stride", 2))
 
     def stack(ids):
-        return tuple(np.concatenate([eps[i][k] for i in ids]) for k in range(5))
+        return tuple(np.concatenate([eps[i][k] for i in ids])
+                     for k in range(len(eps[0])))
 
-    Zp_tr, Zc_tr, Zn_tr, Ap_tr, Af_tr = stack(tr_ids)
-    Zp_va, Zc_va, Zn_va, Ap_va, Af_va = stack(val_ids)
+    Zp_tr, Zc_tr, Zn_tr, Ap_tr, Af_tr, *Wx_tr = stack(tr_ids)
+    Zp_va, Zc_va, Zn_va, Ap_va, Af_va, *Wx_va = stack(val_ids)
+
+    # 손목캠 토큰: 로더가 6번째 배열(z_wrist)을 준 경우에만 사용 가능
+    use_wrist = m_cfg.get("wrist_token", False)
+    if use_wrist and not Wx_tr:
+        raise ValueError("module.wrist_token=true지만 data.wrist_camera 미설정")
+    W_tr = Wx_tr[0] if use_wrist else None
+    W_va = Wx_va[0] if use_wrist else None
 
     # 언어 토큰 (멀티태스크 조건화): 에피소드별 지시문 임베딩을 샘플 수만큼 복제
     use_lang = m_cfg.get("lang_token", False)
@@ -119,8 +129,9 @@ def main():
         L_tr, L_va = stack_lang(tr_ids), stack_lang(val_ids)
 
     def norm(A):
-        return ((A.reshape(len(A), n_chunk, act_dim) - a_mean) / a_std
-                ).astype(np.float32)
+        a = ((A.reshape(len(A), n_chunk, act_dim) - a_mean) / a_std
+             ).astype(np.float32)
+        return chunkrep.to_repr(a, repr_kind)
 
     Cp_tr, Cf_tr = norm(Ap_tr), norm(Af_tr)
     Cp_va, Cf_va = norm(Ap_va), norm(Af_va)
@@ -146,10 +157,17 @@ def main():
                         mode=wb_cfg.get("mode", "online"), config=cfg)
 
     # ---- 정책 모델 ----
-    n_tokens = 4 if use_lang else 3
-    model = build_policy(m_cfg["name"], m_cfg["d_model"], m_cfg["layers"],
-                         m_cfg.get("heads", 8), n_tokens=n_tokens,
-                         latent=latent).to(device)
+    n_tokens = 3 + int(use_lang) + int(use_wrist)
+    model = build_policy_from_cfg(m_cfg, n_tokens=n_tokens,
+                                  latent=latent).to(device)
+    is_flow = isinstance(model, FlowPolicy)
+    if is_flow:                                   # x0 스케일 = 잠재 타깃 분포
+        with torch.no_grad():
+            lt = ae.g(torch.tensor(Cf_tr[:4096], device=device),
+                      torch.tensor(Zc_tr[:4096], device=device))
+        model.x0_std.fill_(lt.std().item())
+        print(f"flow: source={model.source}, steps={model.steps}, "
+              f"x0_std={model.x0_std.item():.4f}")
     n_params = sum(p.numel() for p in model.parameters())
     print(f"policy[{m_cfg['name']}] params: {n_params/1e6:.2f}M "
           f"(d{m_cfg['d_model']}/L{m_cfg['layers']}/H{m_cfg.get('heads', 8)})")
@@ -157,14 +175,17 @@ def main():
                            betas=tuple(t_cfg.get("adam_betas", (0.9, 0.999))))
 
     L_tr_t = torch.tensor(L_tr) if use_lang else torch.zeros(len(Cp_tr), 0)
+    W_tr_t = torch.tensor(W_tr) if use_wrist else torch.zeros(len(Cp_tr), 0)
     loader = DataLoader(
         TensorDataset(torch.tensor(Zp_tr), torch.tensor(Zc_tr),
                       torch.tensor(Zn_tr), torch.tensor(Cp_tr),
-                      torch.tensor(Cf_tr), L_tr_t),
+                      torch.tensor(Cf_tr), L_tr_t, W_tr_t),
         batch_size=t_cfg["batch_size"], shuffle=True)
     val_t = [torch.tensor(x, device=device) for x in (Zp_va, Zc_va, Zn_va)] \
         + [Ae_va.to(device), torch.tensor(Cf_va, device=device)] \
         + [torch.tensor(L_va, device=device) if use_lang
+           else torch.zeros(len(Cf_va), 0, device=device)] \
+        + [torch.tensor(W_va, device=device) if use_wrist
            else torch.zeros(len(Cf_va), 0, device=device)]
     epochs = 3 if args.smoke else t_cfg["epochs"]
     best_val, best_state, patience = np.inf, None, 0
@@ -181,26 +202,43 @@ def main():
             return 0.5 * (1 + np.cos(np.pi * min(prog, 1.0)))
         sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
-    def forward(zp, zc, zn, aemb, cf, lang):
-        toks = [zp, zc, aemb] + ([lang] if use_lang else [])
-        zeta = model(torch.stack(toks, dim=1))        # (B, 3|4, 768)
+    def forward(zp, zc, zn, aemb, cf, lang, wr):
+        toks = [zp, zc, aemb] + ([lang] if use_lang else []) \
+            + ([wr] if use_wrist else [])
+        toks = torch.stack(toks, dim=1)               # (B, 3~5, 768)
+        if is_flow:
+            # lat 자리 = CFM 손실, act = FLD(ODE 샘플 디코딩). val은 고정시드로 결정화
+            gen = None
+            if not model.training:
+                gen = torch.Generator(device=device); gen.manual_seed(0)
+            with torch.no_grad():
+                lat_target = ae.g(cf, zc)
+            zeta, l_fm = model.fm_and_sample(toks, lat_target, generator=gen)
+            l_act = torch.nn.functional.l1_loss(ae.h(zeta, zc), cf)
+            cos = torch.nn.functional.cosine_similarity
+            l_wm = 0.5 * (1 - cos(zeta, zn - zc, dim=1)).mean()
+            total = w["lat"] * l_fm + w["act"] * l_act + w["wm"] * l_wm
+            return total, {"lat": l_fm.item(), "act": l_act.item(),
+                           "wm": l_wm.item()}
+        zeta = model(toks)
         return policy_losses(zeta, cf, zc, zn, ae, w)
 
-    def forward_train(zp, zc, zn, cp, cf, lang):
+    def forward_train(zp, zc, zn, cp, cf, lang, wr):
         if past_noise > 0:                            # 폐루프 오차 누적 모사
             cp = cp + torch.randn_like(cp) * past_noise
         with torch.no_grad():
             aemb = ae.g(cp, zp)
-        return forward(zp, zc, zn, aemb, cf, lang)
+        return forward(zp, zc, zn, aemb, cf, lang, wr)
 
     t0 = time.time()
     for ep in range(epochs):
         model.train()
         logs, parts_log = [], []
-        for zp, zc, zn, cp, cf, lang in loader:
+        for zp, zc, zn, cp, cf, lang, wr in loader:
             loss, parts = forward_train(zp.to(device), zc.to(device),
                                         zn.to(device), cp.to(device),
-                                        cf.to(device), lang.to(device))
+                                        cf.to(device), lang.to(device),
+                                        wr.to(device))
             opt.zero_grad(); loss.backward(); opt.step()
             if sched:
                 sched.step()
@@ -233,8 +271,12 @@ def main():
     # ---- 평가 ----
     model.eval()
     with torch.no_grad():
-        toks = [val_t[0], val_t[1], val_t[3]] + ([val_t[5]] if use_lang else [])
-        zeta = model(torch.stack(toks, dim=1))
+        toks = [val_t[0], val_t[1], val_t[3]] + ([val_t[5]] if use_lang else []) \
+            + ([val_t[6]] if use_wrist else [])
+        gen = torch.Generator(device=device)
+        gen.manual_seed(0)
+        zeta = model(torch.stack(toks, dim=1), generator=gen) if is_flow \
+            else model(torch.stack(toks, dim=1))
         lat_target = ae.g(val_t[4], val_t[1])
         ahat = ae.h(zeta, val_t[1]).cpu().numpy()
     zeta_np = zeta.cpu().numpy()
@@ -245,8 +287,9 @@ def main():
     lat_cos, wm_cos = csim(zeta_np, lat_np), csim(zeta_np, wm_np)
     Cf = Cf_va
     act_r2 = r2(Cf.reshape(len(Cf), -1), ahat.reshape(len(ahat), -1))
-    gt = Cf * a_std + a_mean
-    pr = ahat * a_std + a_mean
+    # 물리 지표(MAE/그리퍼)는 시간영역으로 되돌려 계산 (repr와 무관하게 비교 가능)
+    gt = chunkrep.from_repr(Cf, repr_kind) * a_std + a_mean
+    pr = chunkrep.from_repr(ahat, repr_kind) * a_std + a_mean
     # 액션 배열: aloha 14D(관절 rad, 그리퍼 [6,13]) / 그 외(예: LIBERO 7D — 마지막이 그리퍼)
     if act_dim == 14:
         arm = [0,1,2,3,4,5,7,8,9,10,11,12]

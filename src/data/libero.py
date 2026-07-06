@@ -25,6 +25,7 @@ class LiberoDataset:
         roots = d["root"] if isinstance(d["root"], list) else [d["root"]]
         self.roots = [Path(os.path.expanduser(r)) for r in roots]
         self.camera = d.get("camera", "agentview_rgb")
+        self.wrist_camera = d.get("wrist_camera")    # 예: eye_in_hand_rgb (없으면 미사용)
         self.chunk_sec = float(d["chunk_sec"])
         self.n_chunk = int(d["n_chunk"])
         self.cache_dir = Path(os.path.expanduser(d["cache_dir"]))
@@ -60,10 +61,10 @@ class LiberoDataset:
         with h5py.File(path, "r") as h:
             return h[f"data/{demo}/actions"][:].astype(np.float64)
 
-    def load_frames(self, ep):
+    def load_frames(self, ep, camera=None):
         path, demo = ep
         with h5py.File(path, "r") as h:
-            return h[f"data/{demo}/obs/{self.camera}"][:]
+            return h[f"data/{demo}/obs/{camera or self.camera}"][:]
 
     def instruction(self, ep):
         """태스크 파일명 → 자연어 지시문 (예: pick_up_the_..._demo.hdf5)."""
@@ -87,11 +88,12 @@ class LiberoDataset:
         p.parent.mkdir(parents=True, exist_ok=True)
         return p
 
-    def embeddings(self, clip, ep):
-        cache = self._cache_path(clip, self._key(ep) + f"_{self.camera}.npz")
+    def embeddings(self, clip, ep, camera=None):
+        camera = camera or self.camera
+        cache = self._cache_path(clip, self._key(ep) + f"_{camera}.npz")
         if cache.exists():
             return np.load(cache)["Z"]
-        frames = [Image.fromarray(im) for im in self.load_frames(ep)]
+        frames = [Image.fromarray(im) for im in self.load_frames(ep, camera)]
         Z = []
         for i in range(0, len(frames), 64):
             Z.append(clip.encode_images(frames[i:i + 64])["embeds"])
@@ -177,8 +179,11 @@ class LiberoDataset:
                            for t in starts])
             Af = np.stack([self.resample_chunk(acts[t:t + self.span]).ravel()
                            for t in starts])
-            out.append(tuple(x.astype(np.float32)
-                             for x in (Zp, Zc, Zn, Ap, Af)))
+            arrs = [Zp, Zc, Zn, Ap, Af]
+            if self.wrist_camera:                    # 6번째: 손목캠 z_t (정책 토큰용)
+                Zw = self.embeddings(clip, ep, self.wrist_camera)
+                arrs.append(np.stack([Zw[t] for t in starts]))
+            out.append(tuple(x.astype(np.float32) for x in arrs))
         return out
 
 

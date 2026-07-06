@@ -1,113 +1,193 @@
-# clip_ws — CLIP Visual-Policy 워크스페이스
+# clip_ws — CLIP 잠재공간 Visual-Policy (ALOHA · LIBERO)
 
-frozen CLIP ViT-L/14 잠재공간에서 로봇 액션청크를 결합(Phase 1)하고,
-그 잠재공간 위에서 미래 액션청크를 추론하는 정책(Phase 2)을 학습·평가하는 워크스페이스.
-평가 트랙 2개: **ALOHA**(이 문서 — transfer_cube/insertion, 50Hz) ·
-**LIBERO**(→ README_libero.md — Franka 7D, 인간 데모, 언어 지시문). 공용층(core/models/training)은 동일.
-
-## 모델 구조
+frozen CLIP ViT-L/14 잠재공간에서 액션청크를 결합(Phase 1)하고, 그 위에서 미래
+액션청크를 추론하는 flow matching 정책(Phase 2)을 학습·평가한다.
 
 ```
-Phase 1 (delta-AE):  g(A청크, z_t) ≈ Δz = z_{t+16} − z_t     [인코더: 1D-CNN]
-                     h(Δz, z_t)  ≈ A청크                     [디코더: MLP]
-Phase 2 (정책 f):    ζ̂ = f(z_{t−16}, z_t, g(A_past, z_{t−16}))   [MLP-concat d1024×4층]
-                     Â_{t:t+16} = h(ζ̂, z_t)                  [동결 디코더로 복원]
-추론(폐루프):        16스텝 예측 → 앞 8스텝 실행 → 재예측 (receding horizon)
+Phase 1:  g(A청크, z_t) ≈ Δz = z_{t+16} − z_t   /   h(Δz, z_t) ≈ A청크
+Phase 2:  토큰 [z_{t−16}, z_t, g(A_past), (언어), (손목캠)] → flow matching → ζ̂ → h(ζ̂, z_t) = Â
+폐루프:   16스텝 예측 → 앞 8스텝 실행 → 재예측 (receding horizon)
 ```
 
-- z = CLIP ViT-L/14 pooled 임베딩(768, frozen). 액션청크 = 16스텝 × 14관절(양팔 6+그리퍼 ×2) = 0.32초
-- 손실: Phase1 = align(g≈Δz) + recon(L1) + cycle(L1) / Phase2 = act(L1, 주) + lat(잠재 GT, 보조)
+실험 트랙 2개 — 각각 독립된 conda 환경을 사용한다:
 
-## 0. 환경 설치 (최초 1회)
+| | A. ALOHA | B. LIBERO |
+|---|---|---|
+| 로봇/액션 | 양팔 ViperX, 관절 14D, 50Hz | Franka Panda, OSC 델타 7D, 20Hz |
+| 데이터 | 스크립트 정책으로 직접 수집 | 공식 인간 데모 다운로드 |
+| 정책 입력 | 시각 3토큰 | +언어, +손목캠 토큰 |
+| conda env | `clip` | `clip_libero` |
+
+## 0. 요구사항
+
+- Linux + NVIDIA GPU (VRAM 12GB 이상 권장; RTX 5070 Ti급 Blackwell은 포함된 cu128 torch 필수)
+- conda(Anaconda/Miniconda), 디스크 여유 약 30GB (LIBERO 3개 suite 시 +20GB)
+
+## 1. 공통 설치 (최초 1회)
 
 ```bash
-# 1) conda 환경 "clip" 생성 (torch cu128 포함 — RTX 5070 Ti급 Blackwell GPU 필수 빌드)
-conda env create -f environment.yml
-conda activate clip
+git clone <repo-url> ~/clip_ws && cd ~/clip_ws
 
-# 2) CLIP 가중치 다운로드 (~1.6GB) — 경로는 configs/config.yaml의 clip.model_dir와 일치시킬 것
+# CLIP 가중치 (~1.6GB) — 경로는 configs/config.yaml의 clip.model_dir와 일치시킬 것
+pip install -U "huggingface_hub[cli]"
 hf download openai/clip-vit-large-patch14 --local-dir ~/clip_ws/models/clip-vit-large-patch14
-#   (이미 다른 경로에 있다면 configs/config.yaml의 model_dir만 수정)
 
-# 3) wandb 로깅(선택): wandb login   — 안 하면 configs의 wandb.enabled를 false로
+# wandb 로깅을 쓰지 않으면 모든 학습 명령에 --set wandb.enabled=false 를 붙인다
 ```
 
-## 1~5. 전체 파이프라인
+---
+
+## 2. 실험 A — ALOHA (transfer_cube / insertion)
 
 ```bash
+conda env create -f environment.yml        # env "clip" (최초 1회)
 conda activate clip && cd ~/clip_ws
+```
 
-# 1. 데이터 취득 — 작업당 200 에피소드 (5워커 병렬, 성공 에피소드만 저장, ~15분)
+### A-1. 데이터 수집 (작업당 200 에피소드, 5워커 병렬, ~15분/작업)
+
+```bash
 cd aloha
 MUJOCO_GL=egl python record_sim_episodes.py --task_name sim_transfer_cube_record \
     --num_workers 5 --num_episodes 200 --dataset_dir ~/clip_ws/data/act_sim/sim_transfer_cube
 MUJOCO_GL=egl python record_sim_episodes.py --task_name sim_insertion_record \
     --num_workers 5 --num_episodes 200 --dataset_dir ~/clip_ws/data/act_sim/sim_insertion
 cd ..
-# ⚠️ 데이터를 재취득했다면 임베딩 캐시를 반드시 비울 것: rm -rf outputs/cache/act_sim_emb
-# 에피소드 확인: cd aloha && python visualize_episodes.py --dataset_dir <dir> --episode_idx 0
-
-# 2. Phase 1 학습 — 액션청크↔Δz 결합 AE (첫 실행 시 CLIP 인코딩 ~15분 + 학습 ~5분)
-python src/training/train_phase1.py                    # 설정: configs/phase1.yaml
-
-# 3. Phase 2 학습 — 잠재 정책 f (~3분, phase1 체크포인트 동결 사용)
-python src/training/train_phase2.py                    # 설정: configs/phase2.yaml
-
-# 4. GT 데이터셋 평가 — 전체 시계열 추론이 GT 그래프를 따라가는지 (14관절 플롯)
-python src/eval_aloha/rollout_dataset.py --task sim_transfer_cube
-python src/eval_aloha/rollout_dataset.py --task sim_insertion
-# → outputs/eval/rollout_dataset_*.png
-
-# 5. 시뮬레이션 평가 — 폐루프 실시간 추론 성공률
-MUJOCO_GL=egl python src/eval_aloha/rollout_sim.py --task sim_transfer_cube --episodes 50
-MUJOCO_GL=egl python src/eval_aloha/rollout_sim.py --task sim_insertion --episodes 50
-#   옵션: --save-video 3 (앞 3편 mp4) / --onscreen (실시간 창) / --exec-horizon 8
-
-# → outputs/eval/rollout_*.txt, videos/
+# 확인(선택): cd aloha && python visualize_episodes.py --dataset_dir ~/clip_ws/data/act_sim/sim_transfer_cube --episode_idx 0
 ```
 
-전체 소요(재취득부터 평가까지): **약 1시간~1시간 30분** (롤아웃 25/50회 기준).
+### A-2. Phase 1 학습 (첫 실행 시 CLIP 인코딩 ~15분 + 학습 ~5분)
 
-실험용 오버라이드: 모든 학습 스크립트는 `--set key=value --tag 이름` 지원
-(예: `python src/training/train_phase2.py --set module.d_model=512 --tag d512`
-→ `checkpoints/grid/`, `outputs/grid/<tag>.json`에 분리 저장).
+```bash
+python src/training/train_phase1.py
+# → checkpoints/phase1_delta_ae.pt   (기대: 디코더 R² ≈ 0.98)
+```
 
-## 디렉터리
+### A-3. Phase 2 학습 (~10분)
 
-| 폴더 | 내용 (각 폴더의 README.md 참조) |
+```bash
+python src/training/train_phase2.py
+# → checkpoints/phase2_aloha_fm.pt   (flow matching 정책, 72M)
+```
+
+### A-4. GT 데이터셋 평가 — 예측 궤적이 GT를 따라가는지 (14관절 플롯)
+
+```bash
+python src/eval_aloha/rollout_dataset.py --task sim_transfer_cube
+# → outputs/eval/rollout_dataset_*.png   (기대: 관절 MAE < 1°)
+```
+
+### A-5. 폐루프 성공률
+
+```bash
+MUJOCO_GL=egl python src/eval_aloha/rollout_sim.py --task sim_transfer_cube --episodes 50
+MUJOCO_GL=egl python src/eval_aloha/rollout_sim.py --task sim_insertion --episodes 50
+# 기대(50롤): transfer ≈ 50% / insertion ≈ 30%   (베이스라인 mlp: 43 / 28)
+# 옵션: --save-video 3 (앞 3편 mp4) / --onscreen (실시간 창)
+```
+
+---
+
+## 3. 실험 B — LIBERO (spatial / object / goal suite)
+
+```bash
+conda env create -f environment_libero.yml   # env "clip_libero" (최초 1회)
+conda activate clip_libero && cd ~/clip_ws
+# 첫 libero 임포트 시 설정 프롬프트가 뜨면 N 입력 (스크립트에선 printf "N\n" | 파이프)
+# 벤치마크 자산은 첫 실행 시 ~/.cache/libero 로 자동 다운로드된다
+```
+
+### B-1. 데모 데이터 다운로드 (suite당 6~7GB, task당 hdf5 1개 × 10)
+
+```bash
+python -c "from libero.libero.utils.download_utils import download_from_huggingface; \
+           download_from_huggingface('libero_spatial', 'data/libero', check_overwrite=False)"
+# object/goal suite도 동일: 'libero_object', 'libero_goal'
+```
+
+### B-2. Phase 1 학습 (첫 실행 시 CLIP 인코딩 ~30분 + 학습 ~5분)
+
+```bash
+python src/training/train_phase1.py --config configs/phase1_libero.yaml
+# → checkpoints/phase1_libero.pt
+```
+
+### B-3. Phase 2 학습 (~15분 — 손목캠 인코딩 캐시 포함)
+
+```bash
+python src/training/train_phase2.py --config configs/phase2_libero.yaml
+# → checkpoints/phase2_libero_fm.pt   (flow + 언어 + 손목캠 토큰, 124M)
+```
+
+### B-4. GT 데모 평가 (7D 액션 플롯)
+
+```bash
+python src/eval_libero/rollout_dataset.py
+# → outputs/eval/rollout_dataset_libero_*.png
+```
+
+### B-5. 폐루프 suite 평가
+
+```bash
+MUJOCO_GL=egl python src/eval_libero/rollout_sim.py --suite libero_spatial --episodes 10
+# 기대(10롤×10태스크 평균): spatial ≈ 80%   (베이스라인 mlp: ≈ 37%)
+# 옵션: --task-id 0 (단일 태스크) / --save-video 2
+```
+
+### B-6. 잠재공간 맵핑 시각화 (선택, 대화형 창)
+
+```bash
+python src/eval_libero/latent_mapping.py
+# phase1 잠재공간에 3인칭 전/후·Δz 화살표·g(액션청크) 화살표·그리퍼 델타·언어 cmd를
+# PCA 2D/3D로 표시. 우측에서 태스크/에피소드/시작 시점 선택, [전체 구성]·[3D]·[확대] 토글
+```
+
+다른 suite(object/goal)로 실험하려면 **config 사본에서 경로만 교체** 후 같은 절차 (예: object):
+
+```bash
+sed 's/libero_spatial/libero_object/; s/libero_emb/libero_obj_emb/; s/phase1_libero/phase1_libero_obj/' \
+    configs/phase1_libero.yaml > configs/phase1_libero_obj.yaml
+sed 's/libero_spatial/libero_object/; s/libero_emb/libero_obj_emb/; s/phase1_libero/phase1_libero_obj/; s/phase2_libero_fm/phase2_libero_obj/' \
+    configs/phase2_libero.yaml > configs/phase2_libero_obj.yaml
+# B-2/B-3을 --config configs/phase1_libero_obj.yaml / phase2_libero_obj.yaml 로 실행하고
+# B-5는 --config configs/phase2_libero_obj.yaml --suite libero_object
+```
+
+---
+
+## 4. 모델 변형과 실험 옵션
+
+- **기본 = flow matching 정책** (권장). **베이스라인(MLP 회귀)** 비교는 config만 교체:
+  ```bash
+  python src/training/train_phase2.py --config configs/phase2_mlp.yaml          # ALOHA
+  python src/training/train_phase2.py --config configs/phase2_libero_mlp.yaml   # LIBERO
+  ```
+- 평가 스크립트는 **체크포인트에 저장된 config로 모델 구조를 자동 복원**한다 —
+  같은 평가 명령으로 어떤 변형이든 평가된다 (config의 `train.checkpoint`가 평가 대상을 지정).
+- 모든 학습 스크립트는 오버라이드/분리 저장을 지원한다:
+  ```bash
+  python src/training/train_phase2.py --set module.d_model=512 --tag my_run
+  # → checkpoints/grid/my_run.pt, outputs/grid/my_run.json (기본 체크포인트를 건드리지 않음)
+  ```
+- 주요 `module` 키: `name`(mlp|flow) · `d_model` · `layers` · `ctx_layers`(flow 문맥 인코더) ·
+  `flow_steps`(Euler 스텝) · `lang_token`(LIBERO 언어) · `wrist_token`+`data.wrist_camera`(LIBERO 손목캠)
+
+## 5. 디렉터리
+
+| 경로 | 내용 |
 |---|---|
-| `configs/` | config.yaml(CLIP 경로) + phase1/phase2.yaml (확정 레시피, 근거 주석) |
-| `src/core` | CLIP 래퍼 (pooled 768 임베딩) |
-| `src/data` | act_sim HDF5 로더 — 임베딩 캐시, 학습쌍/삼중쌍 생성(경계 증강 포함) |
-| `src/models` | DeltaAE(g/h), 정책 f(mlp/cls/pma) + 손실 |
-| `src/training` | train_phase1.py / train_phase2.py |
-| `src/eval_aloha` | ALOHA 평가: rollout_dataset.py(GT 그래프) / rollout_sim.py(폐루프 성공률) |
-| `src/eval_libero` | LIBERO 평가 (구현 예정) |
-| `aloha/` | ALOHA MuJoCo 환경(2작업 전용 경량화) + 수집·시각화 스크립트 |
-| `data/act_sim/` | 수집 데이터 (episode_N.hdf5: angle 이미지 + qpos + action, 50Hz) |
-| `checkpoints/` | phase1_delta_ae.pt / phase2_policy.pt (확정 모델) |
-| `outputs/` | cache(임베딩) / eval(그래프·영상·성공률) / grid(실험 런 기록) |
+| `configs/` | phase1/phase2 설정 (ALOHA: `phase1.yaml`·`phase2.yaml` / LIBERO: `*_libero.yaml` / 베이스라인: `*_mlp.yaml`) |
+| `src/core` `src/data` `src/models` `src/training` | CLIP 래퍼 · 로더(임베딩 캐시) · DeltaAE+정책 · 트레이너 (두 트랙 공용) |
+| `src/eval_aloha` `src/eval_libero` | GT 평가(`rollout_dataset.py`) / 폐루프 평가(`rollout_sim.py`) |
+| `aloha/` | ALOHA MuJoCo 시뮬 + 수집·시각화 스크립트 |
+| `data/` `checkpoints/` `outputs/` | 데이터 / 학습 결과 / 캐시·평가 산출물 (git 제외) |
 
-## 현재 성능 (2026-07-03, 작업당 200 eps 학습 기준)
+## 6. 문제 해결
 
-| 평가 | transfer_cube |
-|---|---|
-| Phase1 복원 R² (held-out) | 0.981 |
-| GT 시계열 추론 | 관절 MAE 0.22°, 그리퍼 98% (그래프가 GT 정밀 추종) |
-| 폐루프 성공률 (25롤아웃) | **40%**, 평균 reward 2.04/4 |
-| 추론 속도 | 스텝당 ~9ms (인코딩 8 + 정책 1) — 50Hz 실시간 여유 |
-
-개선 이력: 0%(초기) → 경계샘플 증강+과거청크 노이즈 → pooled 단일공간 단순화 → **40%**.
-(temporal ensemble은 구세대 정책의 결함을 가리던 목발로 판명 — 짝비교 28% vs 무-TE 40%로 제거됨)
-
-## 알려진 이슈와 다음 개선 레버 (우선순위)
-
-폐루프 실패가 이봉형(초기 큐브 정렬 성패가 결정) — 남은 병목은 시각의 물체 위치 정밀도 + 분포이동 잔여분.
-
-1. **정책 시각입력 패치토큰화** — pooled 768은 공간 정보를 압축함 (이봉형 병목 정면 공략)
-2. **proprio(qpos) 4번째 토큰** — 팔 상태를 직접 공급 (코드 수십 줄)
-3. **DAgger 자동 루프** — 스크립트 전문가로 실패 상태 자동 재라벨 (시뮬 특권, 분포이동 정공법)
-4. **데이터 증량** (200→1000/작업 — 수집 ~9분/작업이라 저비용)
-5. flow matching 디코딩 (스크립트 데이터라 멀티모달리티 낮음 — 후순위)
-
-연구 이력(그리드 200여 런, 보고서, 기각 목록): `~/clip_openx_ws/experiments/` 참조.
+- **mujoco 버전 (LIBERO)**: 반드시 3.3.2 (environment_libero.yml에 고정됨 — 2.3.x는 로봇 렌더
+  붕괴, 3.10+는 크래시). 임의 업그레이드 금지
+- **렌더 오류**: 헤드리스/원격에서는 모든 시뮬 명령에 `MUJOCO_GL=egl` 필수
+- **데이터를 다시 수집/다운로드한 경우**: 해당 임베딩 캐시를 비울 것
+  (`rm -rf outputs/cache/act_sim_emb` 또는 `outputs/cache/libero_emb`)
+- **처음부터 완전 재현**: `rm -rf data checkpoints outputs` 후 위 절차를 처음부터
+- GPU 2장 병렬 실험 시 `CUDA_VISIBLE_DEVICES=0|1` 로 트랙별 분리

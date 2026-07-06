@@ -26,6 +26,7 @@ import torch
 import yaml
 from PIL import Image
 
+from core import chunkrep
 from core.anchor import get_anchor
 from data.act_sim import ActSimDataset
 from eval_aloha.rollout_dataset import load_models
@@ -61,7 +62,7 @@ def main():
 
     cfg = yaml.safe_load(open(args.config))
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    ae, policy, a_mean, a_std, n_chunk, act_dim = load_models(cfg, device)
+    ae, policy, a_mean, a_std, n_chunk, act_dim, repr_kind = load_models(cfg, device)
     ds = ActSimDataset(cfg)          # span/resample 유틸 재사용
     clip = get_anchor(cfg)
     env, reset = make_env(args.task)
@@ -95,11 +96,13 @@ def main():
             """(z_{t−16}, z_t, 과거16액션) → 16스텝 액션 (실단위)."""
             past = ds.resample_chunk(np.stack(past_actions))
             past = ((past - a_mean) / a_std).astype(np.float32)
+            past = chunkrep.to_repr(past, repr_kind)
             zp = torch.tensor(z_prev[None], device=device)
             zc = torch.tensor(z_cur[None], device=device)
             a_emb = ae.g(torch.tensor(past[None], device=device), zp)
             zeta = policy(torch.stack([zp, zc, a_emb], dim=1))
-            return ae.h(zeta, zc).cpu().numpy()[0] * a_std + a_mean
+            ahat = ae.h(zeta, zc).cpu().numpy()[0]
+            return chunkrep.from_repr(ahat, repr_kind) * a_std + a_mean
 
         def show(t):
             if ep < args.save_video:
