@@ -30,7 +30,7 @@ class ChunkEncoder(nn.Module):
                 if dropout > 0:
                     convs.append(nn.Dropout(dropout))
                 c_in = hidden
-            self.body = nn.Sequential(*convs)
+            self.conv = nn.Sequential(*convs)   # 이름 유지 = 구 ckpt state_dict 호환
             feat = hidden
         elif encoder_kind == "strided":   # QueST 2407.15840식: causal, stride 2 다운샘플
             convs, c_in = [], action_dim
@@ -63,7 +63,9 @@ class ChunkEncoder(nn.Module):
                                   nn.Linear(hidden, latent_dim))
 
     def forward(self, chunk, z_t=None):
-        if self.kind in ("cnn", "strided"):
+        if self.kind == "cnn":
+            x = self.conv(chunk.transpose(1, 2)).mean(dim=2)
+        elif self.kind == "strided":
             x = self.body(chunk.transpose(1, 2)).mean(dim=2)
         elif self.kind == "transformer":
             h = self.inp(chunk)
