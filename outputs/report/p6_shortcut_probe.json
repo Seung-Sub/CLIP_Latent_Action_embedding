@@ -1,0 +1,23 @@
+{
+ "proprio": {
+  "val_mae": 0.0966,
+  "grip_acc": 92.5,
+  "feat_dim": 9,
+  "n_val": 5502,
+  "protocol": "2층 MLP512 30ep, phase2 동일 split/stride"
+ },
+ "gripper": {
+  "val_mae": 0.1773,
+  "grip_acc": 85.6,
+  "feat_dim": 2,
+  "n_val": 5502,
+  "protocol": "2층 MLP512 30ep, phase2 동일 split/stride"
+ },
+ "z": {
+  "val_mae": 0.1118,
+  "grip_acc": 92.2,
+  "feat_dim": 768,
+  "n_val": 5502,
+  "protocol": "2층 MLP512 30ep, phase2 동일 split/stride"
+ }
+}

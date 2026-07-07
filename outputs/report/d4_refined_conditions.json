@@ -1,0 +1,20 @@
+{
+ "k": 10,
+ "n_samples": 27257,
+ "feature_combine": "블록별 L2 정규화 후 concat (등가중)",
+ "proprio_def": "joint_states(7)+gripper_states(2) 표준화",
+ "conditions": {
+  "z": {
+   "e_var_a_given_c": 0.4103,
+   "r2_ceiling_estimate": 0.5897
+  },
+  "z+wrist": {
+   "e_var_a_given_c": 0.3024,
+   "r2_ceiling_estimate": 0.6976
+  },
+  "z+wrist+proprio": {
+   "e_var_a_given_c": 0.2541,
+   "r2_ceiling_estimate": 0.7459
+  }
+ }
+}

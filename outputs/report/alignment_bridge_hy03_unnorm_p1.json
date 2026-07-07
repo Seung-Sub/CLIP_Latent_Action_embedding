@@ -1,0 +1,26 @@
+{
+ "tag": "bridge_hy03_unnorm_p1",
+ "cos_median": 0.3161817789077759,
+ "cos_p10_p90": [
+  0.1165604516863823,
+  0.4952092170715332
+ ],
+ "norm_ratio_median": 0.5645004510879517,
+ "retrieval_a2z": [
+  11.920656112912456,
+  27.808506580202174
+ ],
+ "per_task_cos_median": {
+  "pick_up_the_black_bowl_between_the_plate": 0.26598167419433594,
+  "pick_up_the_black_bowl_from_table_center": 0.33104878664016724,
+  "pick_up_the_black_bowl_in_the_top_drawer": 0.2837623357772827,
+  "pick_up_the_black_bowl_next_to_the_cooki": 0.37939271330833435,
+  "pick_up_the_black_bowl_next_to_the_plate": 0.27102160453796387,
+  "pick_up_the_black_bowl_next_to_the_ramek": 0.32362931966781616,
+  "pick_up_the_black_bowl_on_the_cookie_box": 0.3755362331867218,
+  "pick_up_the_black_bowl_on_the_ramekin_an": 0.26953625679016113,
+  "pick_up_the_black_bowl_on_the_stove_and_": 0.30642470717430115,
+  "pick_up_the_black_bowl_on_the_wooden_cab": 0.32297131419181824
+ },
+ "n_val": 5243
+}

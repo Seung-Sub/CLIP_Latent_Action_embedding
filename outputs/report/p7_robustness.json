@@ -1,0 +1,60 @@
+{
+ "a_nuisance_snr": {
+  "clip": {
+   "nuisance_dz_median": 1.728559970855713,
+   "action_dz_median": 2.3914706707000732,
+   "snr": 1.3835046291351318,
+   "n_nuis": 3336,
+   "n_act": 30993
+  },
+  "siglip2": {
+   "nuisance_dz_median": 1.3140652179718018,
+   "action_dz_median": 1.8284329175949097,
+   "snr": 1.3914324045181274,
+   "n_nuis": 3336,
+   "n_act": 30993
+  },
+  "dinov2": {
+   "nuisance_dz_median": 6.6421403884887695,
+   "action_dz_median": 9.874872207641602,
+   "snr": 1.4867002964019775,
+   "n_nuis": 3336,
+   "n_act": 30993
+  }
+ },
+ "b_deviation": {
+  "clip_dz": {
+   "n_episodes": 8,
+   "ok_median": 0.13744497299194336,
+   "fail_median": 0.12429249286651611,
+   "fail_p90": 0.1375640332698822,
+   "fail_median_normalized": 6.91,
+   "ok_median_normalized": 7.64,
+   "fail_p90_normalized": 7.65
+  },
+  "dinov2_dz": {
+   "n_episodes": 11,
+   "ok_median": null,
+   "fail_median": 0.1027841567993164,
+   "fail_p90": 0.15456269681453705,
+   "fail_median_normalized": 3.21,
+   "fail_p90_normalized": 4.83
+  }
+ },
+ "protocol": {
+  "snr": "1-step ‖Δz‖, 저액션=action norm 하위5% vs 액션=상위50%, unnorm 캐시",
+  "deviation": "롤아웃 영상 4스텝 서브샘플 → kNN(k=10) 평균 cos 거리 vs 데모 뱅크",
+  "sample_caveat": "z 트레이스 미저장 → 저장 영상만: CLIP-DZ 성공+실패 / DINOv2-DZ 실패 위주 (--save-video 0이었음)"
+ },
+ "b_calibration": {
+  "method": "held-out 데모 100ep 프레임의 kNN10 거리 (train 뱅크 기준) = 앵커별 in-distribution 기준선",
+  "clip": {
+   "demo_ref_median": 0.0179920494556427,
+   "demo_ref_p90": 0.023336362093687057
+  },
+  "dinov2": {
+   "demo_ref_median": 0.03202939033508301,
+   "demo_ref_p90": 0.04726181551814079
+  }
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "track": "aloha",
+ "k": 10,
+ "n_samples": 76800,
+ "e_var_a_given_z": 0.13477136194705963,
+ "var_a": 0.9999527335166931,
+ "r2_ceiling_estimate": 0.865222267583501,
+ "note": "kNN(z-cos, \ub3d9\uc77c \ud0dc\uc2a4\ud06c\u00b7\ud0c0 \uc5d0\ud53c\uc18c\ub4dc) \uc870\uac74\ubd80 \ubd84\uc0b0 \uae30\ubc18. \uc774\uc6c3 \ubc18\uacbd \uc720\ud55c \u2192 \uc0c1\ud55c\uc758 \ubcf4\uc218\uc801(\ub0ae\uc740 \ucabd) \ucd94\uc815\uce58. aloha(\uc2a4\ud06c\ub9bd\ud2b8) \uc218\uce58\uac00 \ucd94\uc815\uae30 \uac80\uc99d \ub300\uc870\uad70."
+}

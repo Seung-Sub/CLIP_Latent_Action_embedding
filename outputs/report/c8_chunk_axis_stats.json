@@ -1,0 +1,32 @@
+{
+ "n_chunks": 27257,
+ "gripper_event_rate": 0.24639542135965073,
+ "dominant_axis_freq": {
+  "x": 0.23847085152437905,
+  "y": 0.18982279781340572,
+  "z": 0.5590123637964559,
+  "roll": 0.000550317349671644,
+  "pitch": 0.005429797850093554,
+  "yaw": 0.0067138716659940565
+ },
+ "dominant_margin_median": 1.9148827723165696,
+ "dominant_magnitude_percentiles": {
+  "10": 3.428571428571429,
+  "25": 6.744642857142857,
+  "50": 9.650892857142855,
+  "75": 11.860714285714286,
+  "90": 13.433035714285715
+ },
+ "per_axis_cum_median": {
+  "x": 3.45,
+  "y": 2.5258928571428574,
+  "z": 6.538392857142857,
+  "roll": 0.23785714285714285,
+  "pitch": 0.5421428571428573,
+  "yaw": 0.3632142857142857
+ },
+ "bin_boundary_decision": {
+  "magnitude_2bin": 9.650892857142855,
+  "rationale": "\uc9c0\ubc30\ucd95 \ub204\uc801 \ubcc0\uc704\uc758 \uc911\uc559\uac12\uc73c\ub85c small/large \uc774\ubd84 \u2014 \ub450 bin\uc758 \ud45c\ubcf8 \uc218\uac00 \uade0\ud615(50/50)\uc774\uace0 \uc2a4\ucf00\uc77c \uc758\uc874 \uc784\uacc4 \uc790\uc758\uc131 \uc81c\uac70. \ud68c\uc804\ucd95\uc740 pos\uc640 \ub2e8\uc704\uac00 \ub2e4\ub974\ubbc0\ub85c \ucd95\ubcc4\uc774 \uc544\ub2cc \uc9c0\ubc30\ucd95 \ud06c\uae30 \uae30\uc900 \ub2e8\uc77c \uacbd\uacc4 \uc0ac\uc6a9(\ubb38\uc7a5\uc740 \uc9c0\ubc30\ucd95\ub9cc \uc11c\uc220)."
+ }
+}

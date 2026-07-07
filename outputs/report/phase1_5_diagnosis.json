@@ -1,0 +1,75 @@
+{
+ "phase": "phase1_5",
+ "track": "libero",
+ "suite": "libero_spatial",
+ "date": "2026-07-06",
+ "baseline_regime": {"aloha_phase1_r2": 0.988, "libero_phase1_r2": 0.682},
+ "closed_loop_baseline_50rollout": {
+  "run_id": "p0_reeval_libero_spatial_raw_s0",
+  "suite_sr": 0.356, "wilson_ci": [0.315, 0.399], "n": 500,
+  "per_task_sr": [0.40, 0.14, 0.36, 0.86, 0.18, 0.30, 0.24, 0.08, 0.66, 0.34],
+  "failure_modes_note": "실패 322건 전부 grasp 태깅(그리퍼 닫기 명령은 항상 발생) — 도달은 하나 파지·배치 정밀도가 병목. wrong_object/goal은 영상 수동 태깅 필요",
+  "protocol": {"max_steps": 300, "wait_steps": 10, "paired_init_states": true},
+  "reference": "20롤아웃 구프로토콜 36.0% → 50롤아웃 35.6%로 재현 (프로토콜 승급 영향 미미)"
+ },
+ "D1_noop_filter": {
+  "status": "REJECTED",
+  "epsilon_selection": {
+   "method": "액션 norm 분포 히스토그램 선행 분석 (계획 규약)",
+   "evidence": "outputs/report/d1_action_norm_hist_libero_spatial_raw.png",
+   "findings": "분포 단봉(중앙값 0.82), ‖a[:-1]‖<1e-3 질량 사실상 0 (정확히 0인 스텝 0.16%). OpenVLA ε=1e-4 필터 대상 0.12%. 자연 갭 없음 → 공식 1e-4(확증) + 0.05(P1 백분위 근거 탐색)",
+   "openvla_rule": "is_noop = ||a[:-1]||2 < 1e-4 AND gripper == prev (검증 노트 §1)"
+  },
+  "experiments": [
+   {"tag": "d1_libero_nofilter", "noop_eps": null, "decoder_r2": 0.6821, "cycle_r2": 0.8805, "align_cos": 0.6551, "retr_a2z_top1": 30.2, "n_train_pairs": 22014},
+   {"tag": "d1_libero_eps1e-4", "noop_eps": 1e-4, "decoder_r2": 0.6811, "cycle_r2": 0.8803, "align_cos": 0.6547, "retr_a2z_top1": 30.2, "n_train_pairs": 21966},
+   {"tag": "d1_libero_eps0.05", "noop_eps": 0.05, "decoder_r2": 0.6828, "cycle_r2": 0.8796, "align_cos": 0.6557, "retr_a2z_top1": 30.3, "n_train_pairs": 21849}
+  ],
+  "conclusion": "raw 사본(pypi libero 재배포판, 500데모 전량=실패필터 미적용 원본)에 no-op 사실상 없음. 필터 효과 = 시드 노이즈 이하 → R² 붕괴 원인 아님"
+ },
+ "D2_resolution": {
+  "status": "MINOR_EFFECT",
+  "method": "데모 states 스텝별 주입 → 256² 재렌더 (스텝 1:1 보존 = 해상도 단일변수 절제). 스크립트 src/diagnosis/d2_rerender.py, 데이터 data/libero_raw256/",
+  "experiments": [
+   {"tag": "d2_libero_raw256", "resolution": 256, "decoder_r2": 0.6935, "cycle_r2": 0.8831, "align_cos": 0.6602, "retr_a2z_top1": 30.0}
+  ],
+  "conclusion": "128→256² 효과 +0.011 R² (0.682→0.693). 유의미하나 붕괴 설명 불가"
+ },
+ "D3_chunk_sec": {
+  "status": "TRADEOFF_FOUND",
+  "experiments": [
+   {"tag": "d3_libero_chunk0.4", "chunk_sec": 0.4, "decoder_r2": 0.6933, "cycle_r2": 0.9397, "align_cos": 0.5563, "retr_a2z_top1": 21.8},
+   {"tag": "d1_libero_nofilter (=0.8 기준)", "chunk_sec": 0.8, "decoder_r2": 0.6821, "cycle_r2": 0.8805, "align_cos": 0.6551, "retr_a2z_top1": 30.2},
+   {"tag": "d3_libero_chunk1.6", "chunk_sec": 1.6, "decoder_r2": 0.6197, "cycle_r2": 0.7254, "align_cos": 0.7311, "retr_a2z_top1": 33.7},
+   {"tag": "d23_libero_256_chunk1.6", "chunk_sec": 1.6, "resolution": 256, "decoder_r2": 0.6263, "cycle_r2": 0.7291, "align_cos": 0.7354, "retr_a2z_top1": 32.8}
+  ],
+  "conclusion": "명확한 트레이드오프: 짧은 청크=복원↑(cycle 0.94) 맵핑↓(align 0.56) / 긴 청크=맵핑↑(align 0.73, retr 33.7%) 복원↓(0.62). Δz-액션 정렬은 시간창이 길수록(시각 변위가 클수록) 강해짐 — P2 SNR 가설과 정합. 디코더 R² 기준으로는 어느 조합도 0.85 미달"
+ },
+ "D4_multimodality": {
+  "status": "PRIMARY_SUSPECT",
+  "method": "z-공간 kNN(k=10, 동일 태스크·타 에피소드) 조건부 액션 분산 → 결정론 R² 상한 = 1 − E[Var(A|z)]/Var(A). src/diagnosis/d4_multimodality.py",
+  "results": {
+   "libero": {"e_var_a_given_z": 0.4103, "r2_ceiling_estimate": 0.590, "n_samples": 27520},
+   "aloha_control": {"e_var_a_given_z": 0.1348, "r2_ceiling_estimate": 0.865, "n_samples": 76800}
+  },
+  "conclusion": "인간 데모의 상태 조건부 액션 분산이 스크립트 대비 3.0배 (0.410 vs 0.135). z_t만 조건으로 한 결정론 상한: libero 0.59 vs aloha 0.87 — 두 트랙의 실측 R²(0.68/0.98)가 상한보다 높은 것은 디코더가 미래 정보를 담은 실제 Δz를 조건으로 받기 때문(추정기는 보수적 하계). 결론: R² 레짐 차이의 지배 요인은 데이터 다봉성 → flow/CVAE 디코더(계획 §5 4.3) 도입 근거 확보",
+  "caveat": "유한 이웃 반경 때문에 상한은 낮은 쪽으로 편향된 추정치. 두 트랙 비교값으로 해석할 것"
+ },
+ "D5_anchor_cross": {"status": "PENDING (Phase 2 매트릭스와 결합)"},
+ "data_variant_openvla_modified": {
+  "generation": "src/diagnosis/d2_rerender.py --mode openvla_replay (공식 스크립트 규칙 재현: 액션 재생 + 성공만 유지 + no-op ε=1e-4 기록 제외 + 256²) → data/libero_openvla_mod/",
+  "stats": {"kept_demos": 438, "replay_failed_demos": 62, "noop_steps_dropped": 97},
+  "phase1": {"tag": "d12_libero_openvla_mod", "decoder_r2": 0.6683, "cycle_r2": 0.8665, "align_cos": 0.6473, "retr_a2z_top1": 26.2, "n_train_pairs": 18675},
+  "conclusion": "OpenVLA식 수정(실패 12.4% 제거 + no-op + 256²)도 R² 개선 없음(0.668 ≤ raw 0.682, 데이터 12% 감소 영향). 수정판 가설 완전 종결 — OpenVLA 계열의 이득은 데이터 정제가 아니라 모델·학습 쪽에서 온 것으로 추정. 주목: 공식 데모의 12.4%가 재생 실패(replay 비결정성 or 원 데모 품질) — 공표 비교 시 주의점"
+ },
+ "G0_gate": {
+  "criterion": "LIBERO Phase1 R² >= 0.85 (D1-D3 조합)",
+  "extension_runs": [
+   {"tag": "g0ext_libero_preproj", "delta_z": "pre-projection 1024d", "decoder_r2": 0.7015, "cycle_r2": 0.8834, "align_cos": 0.6538, "retr_a2z_top1": 31.1},
+   {"tag": "g0ext_libero_nonorm", "delta_z": "비정규화 joint 768d", "decoder_r2": 0.6841, "cycle_r2": 0.8632, "align_cos": 0.6742, "retr_a2z_top1": 35.1}
+  ],
+  "best_so_far": {"config": "g0ext_libero_preproj (pre-projection 1024d)", "decoder_r2": 0.7015},
+  "verdict": "FAIL — D1~D3 + Δz 재정의(pre-proj/비정규화) 전 조합에서 최고 0.70. D4 정량화(조건부 분산 3배)와 결합하면 결론: R² 0.85 회복은 데이터·표현 조작으로 불가능하며 병목은 인간 데모 다봉성. 결정론 디코더 유지 시 상한 도달 상태 → flow/CVAE 디코더(계획 §5 4.3)로의 전환이 구조적 해법. 부수 발견: 비정규화 Δz가 retrieval 최고(35.1%) — Δz 크기 정보 유효, pre-proj가 R² 최고(0.70) — projection에서 정보 손실 존재",
+  "note_for_analyst": "G0 재정의 제안: 결정론 R² 절대 기준(0.85) 대신 D4 상한 대비 달성률(현재 0.70/~0.59+ = 상한 초과 달성 중) 또는 폐루프 SR 기준으로 게이트를 재설정할 것을 권고. 절대 0.85는 이 데이터에서 어떤 결정론 구조로도 미달 가능성 높음"
+ }
+}

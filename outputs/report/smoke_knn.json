@@ -1,0 +1,62 @@
+{
+ "run_id": "smoke_knn",
+ "phase": "phase0",
+ "track": "libero",
+ "condition": {
+  "anchor": "clip-vit-l-14",
+  "anchor_cache_key": "clip-vit-l-14/joint/norm",
+  "obs": "clip-vit-l-14",
+  "lang": "L0(per-task DB)",
+  "data_variant": "raw",
+  "extras": [
+   "knn_baseline_k5"
+  ]
+ },
+ "suite": "libero_spatial",
+ "train_seed": null,
+ "eval": {
+  "n_per_task": 2,
+  "per_task_sr": [
+   0.0
+  ],
+  "suite_sr": 0.0,
+  "wilson_ci": [
+   0.0,
+   0.6576
+  ],
+  "max_steps": 300,
+  "wait_steps": 10,
+  "paired_init_states": true,
+  "exec_horizon": 8,
+  "per_task": {
+   "0": {
+    "sr": 0.0,
+    "n": 2,
+    "wilson_ci": [
+     0.0,
+     0.6576280471103807
+    ],
+    "language": "pick up the black bowl between the plate and the ramekin and place it on the plate",
+    "n_init_states": 50,
+    "failure_modes": {
+     "reach": 0,
+     "grasp": 2,
+     "wrong_object": 0,
+     "wrong_goal": 0
+    }
+   }
+  },
+  "failure_modes": {
+   "reach": 0,
+   "grasp": 2,
+   "wrong_object": 0,
+   "wrong_goal": 0
+  },
+  "infer_ms_mean": 59.65
+ },
+ "offline": {},
+ "train": null,
+ "config_hash": "00fbc423555c",
+ "wandb": null,
+ "notes": ""
+}

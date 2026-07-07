@@ -1,0 +1,178 @@
+{
+ "ckpt": "/tmp/claude-1000/-home-user--local-share-Trash-files-CLIP/1d839f34-7083-4264-b567-eb7a9bde633d/scratchpad/smoke_da.pt",
+ "align_mode": "direct",
+ "n_holdout_sentences": 20,
+ "n_states": 10,
+ "dz_median_norm": 0.25960642099380493,
+ "chance_level": "축·방향 6방향 가정 시 ~16.7% (분포 편중 고려 전)",
+ "rescaled_dz_median": {
+  "dir_acc_mean": 0.15,
+  "per_sentence": {
+   "nudge the hand forward just a touch": {
+    "target": "x+|S",
+    "dir_acc": 0.0
+   },
+   "advance the hand a great deal toward the front": {
+    "target": "x+|L",
+    "dir_acc": 0.0
+   },
+   "drive the gripper firmly ahead": {
+    "target": "x+|L",
+    "dir_acc": 0.0
+   },
+   "ease the gripper back a tiny bit": {
+    "target": "x-|S",
+    "dir_acc": 0.0
+   },
+   "pull the arm way back": {
+    "target": "x-|L",
+    "dir_acc": 0.0
+   },
+   "scoot the hand left a smidge": {
+    "target": "y+|S",
+    "dir_acc": 0.0
+   },
+   "drift the hand slightly leftward": {
+    "target": "y+|S",
+    "dir_acc": 0.0
+   },
+   "swing the arm out wide to the left side": {
+    "target": "y+|L",
+    "dir_acc": 0.0
+   },
+   "inch the arm over to the right": {
+    "target": "y-|S",
+    "dir_acc": 0.0
+   },
+   "sweep the gripper right across the table": {
+    "target": "y-|L",
+    "dir_acc": 0.0
+   },
+   "lift the gripper up a touch": {
+    "target": "z+|S",
+    "dir_acc": 0.0
+   },
+   "raise the hand high up": {
+    "target": "z+|L",
+    "dir_acc": 0.0
+   },
+   "lower the hand a hair closer to the table": {
+    "target": "z-|S",
+    "dir_acc": 1.0
+   },
+   "descend gently toward the surface": {
+    "target": "z-|S",
+    "dir_acc": 1.0
+   },
+   "drop the arm all the way down": {
+    "target": "z-|L",
+    "dir_acc": 1.0
+   },
+   "rotate the wrist strongly leftward": {
+    "target": "roll+|L",
+    "dir_acc": 0.0
+   },
+   "angle the wrist sharply downward": {
+    "target": "pitch-|L",
+    "dir_acc": 0.0
+   },
+   "spin the wrist a good amount counterclockwise": {
+    "target": "yaw+|L",
+    "dir_acc": 0.0
+   },
+   "clamp the fingers shut": {
+    "target": "grip+",
+    "dir_acc": 0.0
+   },
+   "release the grasp": {
+    "target": "grip-",
+    "dir_acc": 0.0
+   }
+  }
+ },
+ "raw_unit": {
+  "dir_acc_mean": 0.15,
+  "per_sentence": {
+   "nudge the hand forward just a touch": {
+    "target": "x+|S",
+    "dir_acc": 0.0
+   },
+   "advance the hand a great deal toward the front": {
+    "target": "x+|L",
+    "dir_acc": 0.0
+   },
+   "drive the gripper firmly ahead": {
+    "target": "x+|L",
+    "dir_acc": 0.0
+   },
+   "ease the gripper back a tiny bit": {
+    "target": "x-|S",
+    "dir_acc": 0.0
+   },
+   "pull the arm way back": {
+    "target": "x-|L",
+    "dir_acc": 0.0
+   },
+   "scoot the hand left a smidge": {
+    "target": "y+|S",
+    "dir_acc": 0.0
+   },
+   "drift the hand slightly leftward": {
+    "target": "y+|S",
+    "dir_acc": 0.0
+   },
+   "swing the arm out wide to the left side": {
+    "target": "y+|L",
+    "dir_acc": 0.0
+   },
+   "inch the arm over to the right": {
+    "target": "y-|S",
+    "dir_acc": 0.0
+   },
+   "sweep the gripper right across the table": {
+    "target": "y-|L",
+    "dir_acc": 0.0
+   },
+   "lift the gripper up a touch": {
+    "target": "z+|S",
+    "dir_acc": 0.0
+   },
+   "raise the hand high up": {
+    "target": "z+|L",
+    "dir_acc": 0.0
+   },
+   "lower the hand a hair closer to the table": {
+    "target": "z-|S",
+    "dir_acc": 1.0
+   },
+   "descend gently toward the surface": {
+    "target": "z-|S",
+    "dir_acc": 1.0
+   },
+   "drop the arm all the way down": {
+    "target": "z-|L",
+    "dir_acc": 1.0
+   },
+   "rotate the wrist strongly leftward": {
+    "target": "roll+|L",
+    "dir_acc": 0.0
+   },
+   "angle the wrist sharply downward": {
+    "target": "pitch-|L",
+    "dir_acc": 0.0
+   },
+   "spin the wrist a good amount counterclockwise": {
+    "target": "yaw+|L",
+    "dir_acc": 0.0
+   },
+   "clamp the fingers shut": {
+    "target": "grip+",
+    "dir_acc": 0.0
+   },
+   "release the grasp": {
+    "target": "grip-",
+    "dir_acc": 0.0
+   }
+  }
+ }
+}

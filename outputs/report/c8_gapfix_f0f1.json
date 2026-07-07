@@ -1,0 +1,138 @@
+{
+ "F0": {
+  "dz_norm": {
+   "median": 0.2607455849647522,
+   "mean": 0.2662756145000458,
+   "std": 0.07439370453357697
+  },
+  "text_norm": 1.0,
+  "n_val_pairs": 5243,
+  "mu_text_norm": 0.9139371514320374,
+  "arm_dz": {
+   "g_norm_median": 0.1859583854675293,
+   "mu_g_norm": 0.05004927143454552,
+   "cos(mu_text, mu_g)": 0.0286,
+   "norm_ratio_text_over_g": 5.4
+  },
+  "arm_da": {
+   "g_norm_median": 3.1496565341949463,
+   "mu_g_norm": 0.6981673836708069,
+   "cos(mu_text, mu_g)": 0.119,
+   "norm_ratio_text_over_g": 0.3
+  },
+  "arm_hy01": {
+   "g_norm_median": 0.37562960386276245,
+   "mu_g_norm": 0.0818057656288147,
+   "cos(mu_text, mu_g)": 0.091,
+   "norm_ratio_text_over_g": 2.7
+  },
+  "arm_hy03": {
+   "g_norm_median": 0.8978449702262878,
+   "mu_g_norm": 0.16941416263580322,
+   "cos(mu_text, mu_g)": 0.1415,
+   "norm_ratio_text_over_g": 1.1
+  }
+ },
+ "F1": {
+  "arm_dz": {
+   "dir_acc": 0.1215,
+   "per_sentence": {
+    "nudge the hand forward just a touch": 0.19,
+    "advance the hand a great deal toward the front": 0.31,
+    "drive the gripper firmly ahead": 0.53,
+    "ease the gripper back a tiny bit": 0.02,
+    "pull the arm way back": 0.0,
+    "scoot the hand left a smidge": 0.07,
+    "drift the hand slightly leftward": 0.02,
+    "swing the arm out wide to the left side": 0.3,
+    "inch the arm over to the right": 0.0,
+    "sweep the gripper right across the table": 0.0,
+    "lift the gripper up a touch": 0.01,
+    "raise the hand high up": 0.0,
+    "lower the hand a hair closer to the table": 0.16,
+    "descend gently toward the surface": 0.12,
+    "drop the arm all the way down": 0.4,
+    "rotate the wrist strongly leftward": 0.0,
+    "angle the wrist sharply downward": 0.0,
+    "spin the wrist a good amount counterclockwise": 0.0,
+    "clamp the fingers shut": 0.28,
+    "release the grasp": 0.02
+   }
+  },
+  "arm_da": {
+   "dir_acc": 0.1585,
+   "per_sentence": {
+    "nudge the hand forward just a touch": 0.57,
+    "advance the hand a great deal toward the front": 0.42,
+    "drive the gripper firmly ahead": 0.59,
+    "ease the gripper back a tiny bit": 0.02,
+    "pull the arm way back": 0.0,
+    "scoot the hand left a smidge": 0.11,
+    "drift the hand slightly leftward": 0.08,
+    "swing the arm out wide to the left side": 0.28,
+    "inch the arm over to the right": 0.01,
+    "sweep the gripper right across the table": 0.0,
+    "lift the gripper up a touch": 0.01,
+    "raise the hand high up": 0.01,
+    "lower the hand a hair closer to the table": 0.28,
+    "descend gently toward the surface": 0.22,
+    "drop the arm all the way down": 0.3,
+    "rotate the wrist strongly leftward": 0.0,
+    "angle the wrist sharply downward": 0.0,
+    "spin the wrist a good amount counterclockwise": 0.0,
+    "clamp the fingers shut": 0.23,
+    "release the grasp": 0.04
+   }
+  },
+  "arm_hy01": {
+   "dir_acc": 0.156,
+   "per_sentence": {
+    "nudge the hand forward just a touch": 0.7,
+    "advance the hand a great deal toward the front": 0.45,
+    "drive the gripper firmly ahead": 0.71,
+    "ease the gripper back a tiny bit": 0.01,
+    "pull the arm way back": 0.0,
+    "scoot the hand left a smidge": 0.08,
+    "drift the hand slightly leftward": 0.03,
+    "swing the arm out wide to the left side": 0.28,
+    "inch the arm over to the right": 0.0,
+    "sweep the gripper right across the table": 0.0,
+    "lift the gripper up a touch": 0.03,
+    "raise the hand high up": 0.0,
+    "lower the hand a hair closer to the table": 0.11,
+    "descend gently toward the surface": 0.18,
+    "drop the arm all the way down": 0.29,
+    "rotate the wrist strongly leftward": 0.0,
+    "angle the wrist sharply downward": 0.0,
+    "spin the wrist a good amount counterclockwise": 0.0,
+    "clamp the fingers shut": 0.24,
+    "release the grasp": 0.01
+   }
+  },
+  "arm_hy03": {
+   "dir_acc": 0.155,
+   "per_sentence": {
+    "nudge the hand forward just a touch": 0.6,
+    "advance the hand a great deal toward the front": 0.34,
+    "drive the gripper firmly ahead": 0.67,
+    "ease the gripper back a tiny bit": 0.0,
+    "pull the arm way back": 0.0,
+    "scoot the hand left a smidge": 0.06,
+    "drift the hand slightly leftward": 0.04,
+    "swing the arm out wide to the left side": 0.2,
+    "inch the arm over to the right": 0.0,
+    "sweep the gripper right across the table": 0.0,
+    "lift the gripper up a touch": 0.0,
+    "raise the hand high up": 0.0,
+    "lower the hand a hair closer to the table": 0.28,
+    "descend gently toward the surface": 0.24,
+    "drop the arm all the way down": 0.37,
+    "rotate the wrist strongly leftward": 0.0,
+    "angle the wrist sharply downward": 0.0,
+    "spin the wrist a good amount counterclockwise": 0.0,
+    "clamp the fingers shut": 0.26,
+    "release the grasp": 0.04
+   }
+  }
+ }
+}

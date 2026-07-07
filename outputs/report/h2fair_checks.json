@@ -1,0 +1,21 @@
+{
+ "sanity_top1": {
+  "siglip2": 0.1,
+  "clip": 0.0
+ },
+ "siglip2_token_len": 64,
+ "coarse_sanity_robot_caption_top1": {
+  "clip": 1.0,
+  "siglip2": 1.0
+ },
+ "fine_sanity_note": "\ud0dc\uc2a4\ud06c \ubb38\uc7a5(\uacf5\uac04 \uad00\uacc4 \uad6c\ubd84)\uc740 \uc591 \uc575\ucee4 \ubaa8\ub450 \uc6b0\uc5f0 \uc218\uc900 \u2014 \uac8c\uc774\ud2b8 \ud310\ubcc4\ub825 \uc5c6\uc74c. \uc870\uc545 \ucea1\uc158\uc73c\ub85c \uc138\ud305 \uac74\uc804\uc131 \ub300\uccb4 \uac80\uc99d",
+ "vocab_neutrality": {
+  "clip": {
+   "nn_same_category": 0.367
+  },
+  "siglip2": {
+   "nn_same_category": 0.181
+  },
+  "verdict": "\uaca9\ucc28 \ud07c \u2192 dual-score v3 \ud544\uc694"
+ }
+}

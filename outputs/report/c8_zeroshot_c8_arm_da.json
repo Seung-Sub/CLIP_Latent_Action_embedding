@@ -1,0 +1,178 @@
+{
+ "ckpt": "checkpoints/grid/c8_arm_da.pt",
+ "align_mode": "direct",
+ "n_holdout_sentences": 20,
+ "n_states": 100,
+ "dz_median_norm": 0.25960642099380493,
+ "chance_level": "축·방향 6방향 가정 시 ~16.7% (분포 편중 고려 전)",
+ "rescaled_dz_median": {
+  "dir_acc_mean": 0.1585,
+  "per_sentence": {
+   "nudge the hand forward just a touch": {
+    "target": "x+|S",
+    "dir_acc": 0.48
+   },
+   "advance the hand a great deal toward the front": {
+    "target": "x+|L",
+    "dir_acc": 0.39
+   },
+   "drive the gripper firmly ahead": {
+    "target": "x+|L",
+    "dir_acc": 0.62
+   },
+   "ease the gripper back a tiny bit": {
+    "target": "x-|S",
+    "dir_acc": 0.08
+   },
+   "pull the arm way back": {
+    "target": "x-|L",
+    "dir_acc": 0.09
+   },
+   "scoot the hand left a smidge": {
+    "target": "y+|S",
+    "dir_acc": 0.09
+   },
+   "drift the hand slightly leftward": {
+    "target": "y+|S",
+    "dir_acc": 0.04
+   },
+   "swing the arm out wide to the left side": {
+    "target": "y+|L",
+    "dir_acc": 0.24
+   },
+   "inch the arm over to the right": {
+    "target": "y-|S",
+    "dir_acc": 0.03
+   },
+   "sweep the gripper right across the table": {
+    "target": "y-|L",
+    "dir_acc": 0.02
+   },
+   "lift the gripper up a touch": {
+    "target": "z+|S",
+    "dir_acc": 0.24
+   },
+   "raise the hand high up": {
+    "target": "z+|L",
+    "dir_acc": 0.16
+   },
+   "lower the hand a hair closer to the table": {
+    "target": "z-|S",
+    "dir_acc": 0.17
+   },
+   "descend gently toward the surface": {
+    "target": "z-|S",
+    "dir_acc": 0.13
+   },
+   "drop the arm all the way down": {
+    "target": "z-|L",
+    "dir_acc": 0.16
+   },
+   "rotate the wrist strongly leftward": {
+    "target": "roll+|L",
+    "dir_acc": 0.0
+   },
+   "angle the wrist sharply downward": {
+    "target": "pitch-|L",
+    "dir_acc": 0.0
+   },
+   "spin the wrist a good amount counterclockwise": {
+    "target": "yaw+|L",
+    "dir_acc": 0.0
+   },
+   "clamp the fingers shut": {
+    "target": "grip+",
+    "dir_acc": 0.22
+   },
+   "release the grasp": {
+    "target": "grip-",
+    "dir_acc": 0.01
+   }
+  }
+ },
+ "raw_unit": {
+  "dir_acc_mean": 0.18,
+  "per_sentence": {
+   "nudge the hand forward just a touch": {
+    "target": "x+|S",
+    "dir_acc": 0.94
+   },
+   "advance the hand a great deal toward the front": {
+    "target": "x+|L",
+    "dir_acc": 0.72
+   },
+   "drive the gripper firmly ahead": {
+    "target": "x+|L",
+    "dir_acc": 0.9
+   },
+   "ease the gripper back a tiny bit": {
+    "target": "x-|S",
+    "dir_acc": 0.0
+   },
+   "pull the arm way back": {
+    "target": "x-|L",
+    "dir_acc": 0.0
+   },
+   "scoot the hand left a smidge": {
+    "target": "y+|S",
+    "dir_acc": 0.01
+   },
+   "drift the hand slightly leftward": {
+    "target": "y+|S",
+    "dir_acc": 0.0
+   },
+   "swing the arm out wide to the left side": {
+    "target": "y+|L",
+    "dir_acc": 0.36
+   },
+   "inch the arm over to the right": {
+    "target": "y-|S",
+    "dir_acc": 0.04
+   },
+   "sweep the gripper right across the table": {
+    "target": "y-|L",
+    "dir_acc": 0.02
+   },
+   "lift the gripper up a touch": {
+    "target": "z+|S",
+    "dir_acc": 0.3
+   },
+   "raise the hand high up": {
+    "target": "z+|L",
+    "dir_acc": 0.01
+   },
+   "lower the hand a hair closer to the table": {
+    "target": "z-|S",
+    "dir_acc": 0.04
+   },
+   "descend gently toward the surface": {
+    "target": "z-|S",
+    "dir_acc": 0.0
+   },
+   "drop the arm all the way down": {
+    "target": "z-|L",
+    "dir_acc": 0.03
+   },
+   "rotate the wrist strongly leftward": {
+    "target": "roll+|L",
+    "dir_acc": 0.0
+   },
+   "angle the wrist sharply downward": {
+    "target": "pitch-|L",
+    "dir_acc": 0.0
+   },
+   "spin the wrist a good amount counterclockwise": {
+    "target": "yaw+|L",
+    "dir_acc": 0.0
+   },
+   "clamp the fingers shut": {
+    "target": "grip+",
+    "dir_acc": 0.23
+   },
+   "release the grasp": {
+    "target": "grip-",
+    "dir_acc": 0.0
+   }
+  }
+ }
+}

@@ -1,0 +1,69 @@
+{
+ "run_id": "smoke_eval_protocol",
+ "phase": "smoke",
+ "track": "libero",
+ "condition": {
+  "anchor": "clip-vit-l-14",
+  "anchor_cache_key": "clip-vit-l-14/joint/norm",
+  "obs": "clip-vit-l-14",
+  "lang": "L1",
+  "data_variant": "raw",
+  "extras": []
+ },
+ "suite": "libero_spatial",
+ "train_seed": 0,
+ "eval": {
+  "n_per_task": 2,
+  "per_task_sr": [
+   0.5
+  ],
+  "suite_sr": 0.5,
+  "wilson_ci": [
+   0.0945,
+   0.9055
+  ],
+  "max_steps": 300,
+  "wait_steps": 10,
+  "paired_init_states": true,
+  "exec_horizon": 8,
+  "per_task": {
+   "0": {
+    "sr": 0.5,
+    "n": 2,
+    "wilson_ci": [
+     0.09452865480086614,
+     0.9054713451991339
+    ],
+    "language": "pick up the black bowl between the plate and the ramekin and place it on the plate",
+    "n_init_states": 50,
+    "failure_modes": {
+     "reach": 0,
+     "grasp": 1,
+     "wrong_object": 0,
+     "wrong_goal": 0
+    }
+   }
+  },
+  "failure_modes": {
+   "reach": 0,
+   "grasp": 1,
+   "wrong_object": 0,
+   "wrong_goal": 0
+  },
+  "infer_ms_mean": 2.11
+ },
+ "offline": {
+  "phase1_r2": 0.6820858120918274,
+  "phase1_cycle_r2": 0.8804752230644226,
+  "retr_top1": 30.173564753004005,
+  "latcos": 0.873592734336853
+ },
+ "train": {
+  "epochs": 50,
+  "lr": 0.0001,
+  "batch_size": 256
+ },
+ "config_hash": "00fbc423555c",
+ "wandb": "phase2_libero",
+ "notes": "protocol smoke test"
+}
