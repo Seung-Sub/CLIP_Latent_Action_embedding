@@ -129,7 +129,7 @@ def main():
     sent_emb_t = ids_tr_t = ids_va_t = None
     if align_mode != "dz":
         from data.motion_lang import MotionSentences
-        ms = MotionSentences()
+        ms = MotionSentences(version=cfg["data"].get("motion_vocab", "v1"))
         ids_tr = ms.assign(A_tr.reshape(-1, n_chunk, act_dim))
         ids_va = ms.assign(A_va.reshape(-1, n_chunk, act_dim))
         sent_emb = ms.embed_all(clip)          # (n_sent, dim_text)

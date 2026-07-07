@@ -153,10 +153,13 @@ def _build_vocab_v2():
 
 
 def load_vocab(version="v1"):
-    path = VOCAB_PATH if version == "v1" else         VOCAB_PATH.with_name("motion_lang_v2.json")
+    path = {"v1": VOCAB_PATH,
+            "v2": VOCAB_PATH.with_name("motion_lang_v2.json"),
+            "v3": VOCAB_PATH.with_name("motion_lang_v3.json")}[version]
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-        builder = _build_vocab if version == "v1" else _build_vocab_v2
+        builder = {"v1": _build_vocab, "v2": _build_vocab_v2,
+                   "v3": _build_vocab_v3}[version]
         path.write_text(json.dumps(builder(), indent=1))
         print(f"{path.name} 생성(고정)")
     return json.loads(path.read_text())
