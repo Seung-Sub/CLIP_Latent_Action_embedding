@@ -152,6 +152,52 @@ def _build_vocab_v2():
             "categories": cats}
 
 
+def _build_vocab_v3():
+    """H2-fair §5: dual-score 선별 — CLIP·SigLIP2 양쪽에서 카테고리 마진>0 문장만
+    유지 (v2 풀 필터, 카테고리당 최소 3문장 = min-margin 상위 폴백). hold-out 불가침."""
+    import numpy as np
+    import torch
+    from core.anchor import ClipAnchor, Siglip2Anchor
+    v2 = load_vocab("v2")
+    cats = v2["categories"]
+    names, sents = [], []
+    for c, d in cats.items():
+        for x in d["train"]:
+            names.append(c); sents.append(x)
+    margins = {}
+    for aname, cls in (("clip", ClipAnchor), ("siglip2", Siglip2Anchor)):
+        a = cls(normalize=False)
+        E = np.concatenate([a.encode_texts(sents[i:i+64])["embeds"]
+                            for i in range(0, len(sents), 64)])
+        En = E / np.linalg.norm(E, axis=1, keepdims=True)
+        keys = list(cats)
+        cent = np.stack([En[[i for i, n in enumerate(names) if n == c]].mean(0)
+                         for c in keys])
+        cent /= np.linalg.norm(cent, axis=1, keepdims=True) + 1e-9
+        sim = En @ cent.T
+        own = np.array([sim[i, keys.index(names[i])] for i in range(len(sents))])
+        oth = np.array([np.delete(sim[i], keys.index(names[i])).max()
+                        for i in range(len(sents))])
+        margins[aname] = own - oth
+        del a
+        torch.cuda.empty_cache()
+    keep = (margins["clip"] > 0) & (margins["siglip2"] > 0)
+    score = np.minimum(margins["clip"], margins["siglip2"])
+    out = {}
+    for c in cats:
+        idx = [i for i, n in enumerate(names) if n == c]
+        kept = [sents[i] for i in idx if keep[i]]
+        if len(kept) < 3:
+            kept = [sents[i] for i in sorted(idx, key=lambda i: -score[i])[:3]]
+        out[c] = {"train": kept, "holdout": cats[c]["holdout"]}
+    return {**{k: v for k, v in v2.items() if k != "categories"},
+            "version": "v3-dual",
+            "selection": "margin>0 in BOTH clip & siglip2 (min-margin top-3 폴백)",
+            "counts": {"train": sum(len(d["train"]) for d in out.values()),
+                       "holdout": v2["counts"]["holdout"]},
+            "categories": out}
+
+
 def load_vocab(version="v1"):
     path = {"v1": VOCAB_PATH,
             "v2": VOCAB_PATH.with_name("motion_lang_v2.json"),
