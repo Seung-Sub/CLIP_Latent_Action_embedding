@@ -225,7 +225,8 @@ def main():
             if save_this and frames:
                 import imageio
                 videos_dir.mkdir(parents=True, exist_ok=True)
-                vp = videos_dir / f"libero_t{tid}_ep{ep}_{'ok' if ok else 'fail'}.mp4"
+                vtag = (args.run_id or args.suite)
+                vp = videos_dir / f"{vtag}_t{tid}_ep{ep}_{'ok' if ok else 'fail'}.mp4"
                 imageio.mimsave(vp, frames, fps=20)
                 if not ok:
                     n_fail_saved += 1
