@@ -101,6 +101,22 @@ class LiberoDataset:
         np.savez_compressed(cache, Z=Z)
         return Z
 
+    def embeddings_meanpatch(self, encoder, ep, camera=None):
+        """C7: 패치 토큰 평균 임베딩 (encoder.encode_images의 tokens 사용, CLS 제외)."""
+        camera = camera or self.camera
+        cache = self._cache_path(encoder, self._key(ep) + f"_{camera}_mp.npz")
+        if cache.exists():
+            return np.load(cache)["Z"]
+        frames = [Image.fromarray(im) for im in self.load_frames(ep, camera)]
+        Z = []
+        for i in range(0, len(frames), 32):
+            out = encoder.encode_images(frames[i:i + 32])
+            assert out.get("tokens") is not None, "encoder가 패치 토큰 미반환"
+            Z.append(out["tokens"][:, 1:].mean(axis=1))   # CLS 제외 평균
+        Z = np.concatenate(Z).astype(np.float32)
+        np.savez_compressed(cache, Z=Z)
+        return Z
+
     def instruction_embedding(self, clip, ep):
         path, _ = ep
         cache = self._cache_path(clip, path.stem + "_lang.npz")

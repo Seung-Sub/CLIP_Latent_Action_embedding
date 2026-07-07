@@ -109,7 +109,11 @@ def main():
     cfg = yaml.safe_load(open(args.config))
     device = "cuda" if torch.cuda.is_available() else "cpu"
     (ae, policy, a_mean, a_std, n_chunk, act_dim, use_lang,
-     repr_kind, wrist_cam, proprio) = load_models(cfg, device)
+     repr_kind, wrist_cam, proprio, use_obs2) = load_models(cfg, device)
+    obs2_enc = None
+    if use_obs2:
+        from core.anchor import Dinov2Anchor
+        obs2_enc = Dinov2Anchor(normalize=False)
     ds = LiberoDataset(cfg)          # span/resample 재사용
     clip = get_anchor(cfg)
     lang_enc = clip
@@ -182,6 +186,11 @@ def main():
                     toks = [zp, zc, a_emb] + ([lang] if use_lang else []) \
                         + ([torch.tensor(encode_wrist(obs)[None], device=device)]
                            if wrist_cam else [])
+                    if use_obs2:
+                        mp = obs2_enc.encode_images(
+                            [Image.fromarray(frame(obs))])["tokens"][:, 1:].mean(axis=1)
+                        toks.append(policy.obs2_proj(
+                            torch.tensor(mp, dtype=torch.float32, device=device)))
                     if proprio is not None:
                         _pmap = {"joint_states": "robot0_joint_pos",
                                  "gripper_states": "robot0_gripper_qpos"}
