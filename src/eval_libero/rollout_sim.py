@@ -109,7 +109,7 @@ def main():
     cfg = yaml.safe_load(open(args.config))
     device = "cuda" if torch.cuda.is_available() else "cpu"
     (ae, policy, a_mean, a_std, n_chunk, act_dim, use_lang,
-     repr_kind, wrist_cam, proprio, use_obs2) = load_models(cfg, device)
+     repr_kind, wrist_cam, proprio, use_obs2, obs2_stats) = load_models(cfg, device)
     obs2_enc = None
     if use_obs2:
         from core.anchor import Dinov2Anchor
@@ -186,11 +186,8 @@ def main():
                     toks = [zp, zc, a_emb] + ([lang] if use_lang else []) \
                         + ([torch.tensor(encode_wrist(obs)[None], device=device)]
                            if wrist_cam else [])
-                    if use_obs2:
-                        mp = obs2_enc.encode_images(
-                            [Image.fromarray(frame(obs))])["tokens"][:, 1:].mean(axis=1)
-                        toks.append(policy.obs2_proj(
-                            torch.tensor(mp, dtype=torch.float32, device=device)))
+                    # 토큰 순서 = 학습과 동일해야 함: [..., proprio, obs2]
+                    # (검증 에이전트 발견: obs2가 proprio보다 앞이면 순서 뒤바뀜)
                     if proprio is not None:
                         _pmap = {"joint_states": "robot0_joint_pos",
                                  "gripper_states": "robot0_gripper_qpos"}
@@ -200,6 +197,12 @@ def main():
                         toks.append(policy.proprio_proj(
                             torch.tensor(p[None], dtype=torch.float32,
                                          device=device)))
+                    if use_obs2:
+                        mp = obs2_enc.encode_images(
+                            [Image.fromarray(frame(obs))])["tokens"][:, 1:].mean(axis=1)
+                        mp = (mp - obs2_stats["mean"]) / obs2_stats["std"]
+                        toks.append(policy.obs2_proj(
+                            torch.tensor(mp, dtype=torch.float32, device=device)))
                     zeta = policy(torch.stack(toks, dim=1))
                     ahat = chunkrep.from_repr(
                         ae.h(zeta, zc).cpu().numpy()[0], repr_kind) \

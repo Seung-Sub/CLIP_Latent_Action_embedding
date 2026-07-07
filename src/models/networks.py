@@ -33,10 +33,12 @@ class ChunkEncoder(nn.Module):
             self.conv = nn.Sequential(*convs)   # 이름 유지 = 구 ckpt state_dict 호환
             feat = hidden
         elif encoder_kind == "strided":   # QueST 2407.15840식: causal, stride 2 다운샘플
+            # causal pad = k - s (검증 리뷰: (2,0)+stride2는 마지막 3스텝 그래디언트 0)
             convs, c_in = [], action_dim
             for i in range(layers):
-                convs += [nn.ConstantPad1d((2, 0), 0.0),
-                          nn.Conv1d(c_in, hidden, kernel_size=3, stride=2 if i < 2 else 1),
+                stride = 2 if i < 2 else 1
+                convs += [nn.ConstantPad1d((3 - stride, 0), 0.0),
+                          nn.Conv1d(c_in, hidden, kernel_size=3, stride=stride),
                           nn.GELU()]
                 c_in = hidden
             self.body = nn.Sequential(*convs)
@@ -171,6 +173,9 @@ class DeltaAE(nn.Module):
             total = total + cw * l_con
             parts["contrast"] = l_con.item()
         w_comp = float(w.get("comp", 0.0))
+        if w_comp > 0 and self.g.kind not in ("cnn", "strided"):
+            raise ValueError(f"loss.comp는 가변길이 인코더 전용 (현재 {self.g.kind} — "
+                             "transformer/mlp는 고정 길이라 half-chunk 불가)")
         if w_comp > 0:                       # 절제 #2 (CLASP 1806.09655 조합성)
             T = chunk.shape[1]
             half = T // 2

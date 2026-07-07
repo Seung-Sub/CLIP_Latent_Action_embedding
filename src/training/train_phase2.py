@@ -123,6 +123,7 @@ def main():
 
     # C7: 제2 관측 토큰 (DINOv2 mean-patch) — 앵커와 독립, 정책 입력만 추가
     use_obs2 = m_cfg.get("obs2_token", False)
+    o_mean = o_std = None
     if use_obs2:
         from core.anchor import Dinov2Anchor
         obs2_enc = Dinov2Anchor(normalize=False)
@@ -137,6 +138,11 @@ def main():
             O_eps.append(np.stack([Zmp[t] for t in starts]).astype(np.float32))
         O_tr = np.concatenate([O_eps[i] for i in tr_ids])
         O_va = np.concatenate([O_eps[i] for i in val_ids])
+        # 표준화 (검증 리뷰 #4: 비표준화 mp는 공유 LayerNorm을 지배 — proprio와 동일 처리)
+        o_mean = O_tr.mean(0)
+        o_std = np.maximum(O_tr.std(0), 1e-6)
+        O_tr = ((O_tr - o_mean) / o_std).astype(np.float32)
+        O_va = ((O_va - o_mean) / o_std).astype(np.float32)
         m_cfg["obs2_dim"] = int(O_tr.shape[1])
         del obs2_enc
         torch.cuda.empty_cache()
@@ -379,7 +385,9 @@ def main():
     ckpt_path = Path(os.path.expanduser(t_cfg["checkpoint"]))
     ckpt_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save({"state_dict": best_state, "config": cfg, "metrics": metrics,
-                "p_mean": p_mean, "p_std": p_std},
+                "p_mean": p_mean, "p_std": p_std,
+                "o_mean": o_mean if use_obs2 else None,
+                "o_std": o_std if use_obs2 else None},
                ckpt_path)
     print(f"저장: {ckpt_path}")
     if args.tag:

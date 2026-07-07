@@ -60,19 +60,22 @@ def load_models(cfg, device):
     m = ck2["config"]["module"]
     use_lang = m.get("lang_token", False)
     use_wrist = m.get("wrist_token", False)
-    n_tok = 3 + int(use_lang) + int(use_wrist) + int(m.get("proprio_token", False))
+    n_tok = 3 + int(use_lang) + int(use_wrist) \
+        + int(m.get("proprio_token", False)) + int(m.get("obs2_token", False))
     policy = build_policy_from_cfg(m, n_tokens=n_tok,
                                    latent=latent).to(device).eval()
     policy.load_state_dict(ck2["state_dict"])
     wrist_cam = ck2["config"]["data"].get("wrist_camera") if use_wrist else None
     use_obs2 = m.get("obs2_token", False)
+    obs2_stats = ({"mean": ck2["o_mean"], "std": ck2["o_std"]}
+                  if m.get("obs2_token") else None)
     proprio = ({"mean": ck2["p_mean"], "std": ck2["p_std"],
                 "fields": ck2["config"]["data"].get(
                     "proprio_fields") or ["joint_states", "gripper_states"]}
                if m.get("proprio_token") else None)
     return (ae, policy, ck1["a_mean"], ck1["a_std"], ck1["n_chunk"],
             ck1["action_dim"], use_lang, ck1.get("chunk_repr", "time"),
-            wrist_cam, proprio, use_obs2)
+            wrist_cam, proprio, use_obs2, obs2_stats)
 
 
 def main():
@@ -85,7 +88,7 @@ def main():
     cfg = yaml.safe_load(open(args.config))
     device = "cuda" if torch.cuda.is_available() else "cpu"
     (ae, policy, a_mean, a_std, n_chunk, act_dim, use_lang,
-     repr_kind, wrist_cam, proprio, use_obs2) = load_models(cfg, device)
+     repr_kind, wrist_cam, proprio, use_obs2, obs2_stats) = load_models(cfg, device)
     ds = LiberoDataset(cfg)
     clip = get_anchor(cfg)
 

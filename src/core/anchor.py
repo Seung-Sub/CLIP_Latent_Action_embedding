@@ -128,12 +128,20 @@ class Siglip2Anchor(BaseAnchor):
 
 
 class Dinov2Anchor(BaseAnchor):
-    """DINOv2-L — 무언어 대조 앵커 (H2). 임베딩 = CLS(pooler), projection 구분 없음(pre 고정)."""
-    id = "dinov2-large"
+    """DINOv2-L — 무언어 대조 앵커 (H2).
+
+    v2 보정 (앵커 적응 감사, 2026-07-08 — 검증 에이전트 발견):
+    - center-crop 제거: 기본 processor는 256 resize→224 crop으로 시뮬 렌더의 테두리
+      12.5%를 삭제 (DINO-WM 등 로봇 관행 = 224 직접 resize). → do_center_crop=False.
+    - pooled 옵션: cls(기존) / clsmp(CLS ⊕ patch-mean concat, 2048d — DINOv2 논문
+      프로빙 프로토콜의 강한 구성; DINO-WM 절제에서 CLS 단독은 dynamics에 유의 저하).
+    - 캐시 키에 전처리 판 반영 (id 접미사) — 구 캐시(crop판)와 혼합 방지.
+    """
     has_text = False
     patch_dim = 1024
 
-    def __init__(self, projection="pre", normalize=True, model_dir=None):
+    def __init__(self, projection="pre", normalize=True, model_dir=None,
+                 pooled="cls", center_crop=False):
         super().__init__("pre", normalize)     # joint 공간 없음 → pre 고정
         from transformers import AutoImageProcessor, AutoModel
         src = model_dir or "facebook/dinov2-large"
@@ -141,14 +149,29 @@ class Dinov2Anchor(BaseAnchor):
         self.model = AutoModel.from_pretrained(
             src, dtype=torch.float16 if self.device == "cuda" else torch.float32
         ).to(self.device).eval()
-        self.processor = AutoImageProcessor.from_pretrained(src)
-        self.dim = self.model.config.hidden_size                  # 1024
+        if center_crop:
+            self.processor = AutoImageProcessor.from_pretrained(src)
+            self.id = "dinov2-large"                     # 구판 (crop) — 기존 캐시 호환
+        else:
+            self.processor = AutoImageProcessor.from_pretrained(
+                src, do_center_crop=False,
+                size={"height": 224, "width": 224}, do_resize=True)
+            self.id = "dinov2-large-nc"                  # no-crop 판 = 새 캐시 키
+        assert pooled in ("cls", "clsmp"), pooled
+        self.pooled = pooled
+        if pooled == "clsmp":
+            self.id += "-clsmp"
+        self.dim = self.model.config.hidden_size * (2 if pooled == "clsmp" else 1)
 
     @torch.no_grad()
     def encode_images(self, pil_images):
         inputs = self.processor(images=pil_images, return_tensors="pt").to(self.device)
         out = self.model(pixel_values=inputs["pixel_values"].to(self.model.dtype))
-        return {"embeds": self._post(out.pooler_output),
+        cls = out.pooler_output                          # = last_hidden[:, 0] (HF 검증)
+        if self.pooled == "clsmp":
+            pm = out.last_hidden_state[:, 1:].mean(dim=1)
+            cls = torch.cat([cls, pm], dim=1)
+        return {"embeds": self._post(cls),
                 "tokens": out.last_hidden_state.float().cpu().numpy()}
 
 
@@ -166,4 +189,7 @@ def get_anchor(cfg=None):
               "normalize": a.get("normalize", True)}
     if name == "clip":
         return ClipAnchor(**kwargs, cfg=cfg)
+    if name == "dinov2":
+        kwargs["pooled"] = a.get("pooled", "cls")
+        kwargs["center_crop"] = a.get("center_crop", False)   # 기본 = no-crop (v2 보정)
     return _REGISTRY[name](**kwargs, model_dir=a.get("model_dir"))

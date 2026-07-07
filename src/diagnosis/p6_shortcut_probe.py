@@ -31,7 +31,8 @@ WS = Path(__file__).resolve().parents[2]
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--features", choices=["proprio", "gripper", "z", "wrist"],
+    ap.add_argument("--features", choices=["proprio", "gripper", "z", "wrist",
+                                           "dinov2mp"],
                     required=True)
     ap.add_argument("--config", default=str(WS / "configs" / "phase2_libero.yaml"))
     ap.add_argument("--epochs", type=int, default=30)
@@ -53,6 +54,16 @@ def main():
         fields = ["gripper_states"] if args.features == "gripper" \
             else ["joint_states", "gripper_states"]
         X_eps = ds.build_proprio(files, stride=stride, fields=fields)
+    elif args.features == "dinov2mp":       # C7 후보 토큰: DINOv2 mean-patch
+        from core.anchor import Dinov2Anchor
+        enc = Dinov2Anchor(normalize=False)
+        X_eps = []
+        for ep in files:
+            acts = ds.load_actions(ep)
+            keep = ds.keep_indices(acts)
+            Z = ds.embeddings_meanpatch(enc, ep)[keep]
+            starts = list(range(0, len(keep) - ds.span, stride))
+            X_eps.append(np.stack([Z[t] for t in starts]).astype(np.float32))
     else:
         clip = get_anchor(cfg)
         cam = None if args.features == "z" else "eye_in_hand_rgb"
