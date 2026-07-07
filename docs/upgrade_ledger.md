@@ -48,6 +48,11 @@ phase1의 align 항은 **접지 정규화(grounding regularizer)**다 — per-sa
 g 분포에서 디코딩을 학습한다 — 시스템은 Δz에 느슨히 접지된 **수축 매니폴드(‖g‖≈0.56‖Δz‖)
 에서 자기일관적으로 동작**한다. 노름비 0.56은 결함이 아니라 동작점이다.
 
+| Action BiCodec (RVQ 2-스트림) | — | semantic/style 분리 코덱; style 스트림 = 그리퍼/force/tactile 수용처 후보 (손목 트랙 합류 가능) | 서베이 §RVQ | 게이트 = level-1 태스크 분류 ≥70% (2주 MVP); 발동 = S2·G3 마감 후 | 대기 |
+| inner monologue for actions | — | 시간 정렬 언어 스트림 (Moshi식 + RTC 2506.07339) | 서베이 파라언어 서사 | S3급 (S2 완료 후) | 대기 |
+| LLM 결합 | lang_token (CLIP text) | SALMONN식 soft-prompt + Knowledge Insulation 2505.23705 | 서베이 | G3 실패 시 폴백 (기존 앵커-LoRA 트랙과 병렬 후보) | 대기 |
+| Δz 표현 세부 | 단일 벡터 회귀 | 방향/크기 분리 학습 (노름비 0.56 수축과 연계) · RVQ 보조 CE head (TIGER식, 저데이터 한정) · latent attention 50% masking (Moto/villa-X) | 서베이 | 정렬 리포트가 크기 예측을 병목으로 지목 시 | 대기 |
+
 ## 예측 장부 (분석자 사전 등록 vs 실측)
 
 | # | 예측 (등록 시점) | 실측 | 판정 |
