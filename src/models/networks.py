@@ -13,26 +13,64 @@ import torch.nn as nn
 
 
 class ChunkEncoder(nn.Module):
-    """(B, T, D) [+ z_t] → (B, latent)"""
+    """(B, T, D) [+ z_t] → (B, latent). encoder_kind (절제 #6):
+    cnn(기본 1D-CNN+mean) / strided(QueST식 causal strided conv) /
+    transformer(3층 d256 [CLS]) / mlp(flatten)."""
 
     def __init__(self, action_dim, latent_dim=768, hidden=512, layers=4,
-                 dropout=0.0, state_cond=True):
+                 dropout=0.0, state_cond=True, encoder_kind="cnn", n_chunk=16):
         super().__init__()
         self.state_cond = state_cond
-        convs, c_in = [], action_dim
-        for _ in range(layers):
-            convs += [nn.Conv1d(c_in, hidden, kernel_size=3, padding=1),
-                      nn.GELU()]
-            if dropout > 0:
-                convs.append(nn.Dropout(dropout))
-            c_in = hidden
-        self.conv = nn.Sequential(*convs)
-        head_in = hidden + (latent_dim if state_cond else 0)
+        self.kind = encoder_kind
+        if encoder_kind == "cnn":
+            convs, c_in = [], action_dim
+            for _ in range(layers):
+                convs += [nn.Conv1d(c_in, hidden, kernel_size=3, padding=1),
+                          nn.GELU()]
+                if dropout > 0:
+                    convs.append(nn.Dropout(dropout))
+                c_in = hidden
+            self.body = nn.Sequential(*convs)
+            feat = hidden
+        elif encoder_kind == "strided":   # QueST 2407.15840식: causal, stride 2 다운샘플
+            convs, c_in = [], action_dim
+            for i in range(layers):
+                convs += [nn.ConstantPad1d((2, 0), 0.0),
+                          nn.Conv1d(c_in, hidden, kernel_size=3, stride=2 if i < 2 else 1),
+                          nn.GELU()]
+                c_in = hidden
+            self.body = nn.Sequential(*convs)
+            feat = hidden
+        elif encoder_kind == "transformer":
+            d = 256
+            self.inp = nn.Linear(action_dim, d)
+            self.cls = nn.Parameter(torch.zeros(1, 1, d))
+            self.pos = nn.Parameter(torch.zeros(1, n_chunk + 1, d))
+            enc = nn.TransformerEncoderLayer(d, 8, 4 * d, activation="gelu",
+                                             batch_first=True, norm_first=True)
+            self.body = nn.TransformerEncoder(enc, 3)
+            feat = d
+        elif encoder_kind == "mlp":
+            self.body = nn.Sequential(
+                nn.LayerNorm(n_chunk * action_dim),
+                nn.Linear(n_chunk * action_dim, hidden), nn.GELU(),
+                nn.Linear(hidden, hidden), nn.GELU())
+            feat = hidden
+        else:
+            raise ValueError(encoder_kind)
+        head_in = feat + (latent_dim if state_cond else 0)
         self.head = nn.Sequential(nn.Linear(head_in, hidden), nn.GELU(),
                                   nn.Linear(hidden, latent_dim))
 
     def forward(self, chunk, z_t=None):
-        x = self.conv(chunk.transpose(1, 2)).mean(dim=2)   # 시간축 평균 풀링
+        if self.kind in ("cnn", "strided"):
+            x = self.body(chunk.transpose(1, 2)).mean(dim=2)
+        elif self.kind == "transformer":
+            h = self.inp(chunk)
+            h = torch.cat([self.cls.expand(len(h), -1, -1), h], 1) + self.pos
+            x = self.body(h)[:, 0]
+        else:
+            x = self.body(chunk.flatten(1))
         if self.state_cond:
             x = torch.cat([x, z_t], dim=1)
         return self.head(x)
@@ -72,12 +110,16 @@ class DeltaAE(nn.Module):
 
     def __init__(self, action_dim, n_chunk, latent_dim=768, hidden=512,
                  layers=4, dropout=0.0, state_cond=True,
-                 align_mode="dz", contrast_w=0.0, contrast_head=False):
+                 align_mode="dz", contrast_w=0.0, contrast_head=False,
+                 g_state_cond=None, h_state_cond=None, encoder_kind="cnn"):
         super().__init__()
+        # QueST 절제 #4: g/h 상태조건 개별 제어 (기본 = 기존 state_cond 동일)
+        g_sc = state_cond if g_state_cond is None else g_state_cond
+        h_sc = state_cond if h_state_cond is None else h_state_cond
         self.g = ChunkEncoder(action_dim, latent_dim, hidden, layers,
-                              dropout, state_cond)
+                              dropout, g_sc, encoder_kind, n_chunk)
         self.h = ChunkDecoder(action_dim, n_chunk, latent_dim, hidden,
-                              layers, dropout, state_cond)
+                              layers, dropout, h_sc)
         assert align_mode in ("dz", "direct", "hybrid"), align_mode
         self.align_mode = align_mode
         self.contrast_w = contrast_w
@@ -126,5 +168,23 @@ class DeltaAE(nn.Module):
             cw = self.contrast_w if self.align_mode == "hybrid" else w["align"]
             total = total + cw * l_con
             parts["contrast"] = l_con.item()
+        w_comp = float(w.get("comp", 0.0))
+        if w_comp > 0:                       # 절제 #2 (CLASP 1806.09655 조합성)
+            T = chunk.shape[1]
+            half = T // 2
+            # z_mid ≈ z_t + g(전반) 로 근사한 상태에서 후반 인코딩 (텔레스코핑 정합)
+            g_a = self.g(chunk[:, :half], z_t)
+            z_mid = (z_t + g_a) if z_t is not None else None
+            g_b = self.g(chunk[:, half:], z_mid)
+            g_full = self.g(chunk, z_t)
+            l_comp = nn.functional.mse_loss(g_a + g_b, g_full)
+            total = total + w_comp * l_comp
+            parts["comp"] = l_comp.item()
+        w_vel = float(w.get("vel", 0.0))
+        if w_vel > 0:                        # 절제 #5: 속도(1차 차분) L2
+            l_vel = nn.functional.mse_loss(
+                ahat[:, 1:] - ahat[:, :-1], chunk[:, 1:] - chunk[:, :-1])
+            total = total + w_vel * l_vel
+            parts["vel"] = l_vel.item()
         parts.update({"recon": l_recon.item(), "cycle": l_cycle.item()})
         return total, parts

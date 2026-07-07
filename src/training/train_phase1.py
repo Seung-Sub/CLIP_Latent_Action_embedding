@@ -107,9 +107,15 @@ def main():
     n_chunk, act_dim = cfg["data"]["n_chunk"], A_tr.shape[1] // cfg["data"]["n_chunk"]
 
     # 액션 정규화 (train 통계, 체크포인트에 저장)
+    # norm_scheme (절제 #3): meanstd(기본) / quantile (OpenVLA식 per-dim 1–99%)
     A_tr2 = A_tr.reshape(-1, act_dim)
-    a_mean = A_tr2.mean(0)
-    a_std = np.maximum(A_tr2.std(0), 1e-6)
+    if cfg["data"].get("norm_scheme") == "quantile":
+        q1, q99 = np.percentile(A_tr2, 1, axis=0), np.percentile(A_tr2, 99, axis=0)
+        a_mean = (q1 + q99) / 2
+        a_std = np.maximum((q99 - q1) / 2, 1e-6)
+    else:
+        a_mean = A_tr2.mean(0)
+        a_std = np.maximum(A_tr2.std(0), 1e-6)
 
     def norm_chunks(A):
         return ((A.reshape(len(A), n_chunk, act_dim) - a_mean) / a_std
@@ -153,7 +159,10 @@ def main():
                     m_cfg.get("state_cond", True),
                     align_mode=align_mode,
                     contrast_w=float(w.get("contrast", 0.0)),
-                    contrast_head=m_cfg.get("contrast_head", False)).to(device)
+                    contrast_head=m_cfg.get("contrast_head", False),
+                    g_state_cond=m_cfg.get("g_state_cond"),
+                    h_state_cond=m_cfg.get("h_state_cond"),
+                    encoder_kind=m_cfg.get("encoder_kind", "cnn")).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"DeltaAE params: {n_params/1e6:.2f}M (encoder cnn/{m_cfg['hidden']}x"
           f"{m_cfg['layers']}, decoder mlp/{m_cfg['hidden']}x{m_cfg['layers']})")

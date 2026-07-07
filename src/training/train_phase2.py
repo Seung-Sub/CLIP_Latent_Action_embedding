@@ -78,7 +78,10 @@ def main():
                  p1["model"]["hidden"], p1["model"]["layers"],
                  p1["model"]["dropout"],
                  p1["model"].get("state_cond", True),
-                 align_mode=p1["model"].get("align_mode", "dz")).to(device)
+                 align_mode=p1["model"].get("align_mode", "dz"),
+                 g_state_cond=p1["model"].get("g_state_cond"),
+                 h_state_cond=p1["model"].get("h_state_cond"),
+                 encoder_kind=p1["model"].get("encoder_kind", "cnn")).to(device)
     ae.load_state_dict(ck["state_dict"])
     ae.eval()
     for p in ae.parameters():

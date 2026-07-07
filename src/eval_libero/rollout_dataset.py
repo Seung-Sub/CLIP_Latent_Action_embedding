@@ -50,7 +50,10 @@ def load_models(cfg, device):
                  p1["model"]["hidden"], p1["model"]["layers"],
                  p1["model"]["dropout"],
                  p1["model"].get("state_cond", True),
-                 align_mode=p1["model"].get("align_mode", "dz")).to(device).eval()
+                 align_mode=p1["model"].get("align_mode", "dz"),
+                 g_state_cond=p1["model"].get("g_state_cond"),
+                 h_state_cond=p1["model"].get("h_state_cond"),
+                 encoder_kind=p1["model"].get("encoder_kind", "cnn")).to(device).eval()
     ae.load_state_dict(ck1["state_dict"])
     ck2 = torch.load(os.path.expanduser(cfg["train"]["checkpoint"]),
                      map_location="cpu", weights_only=False)
