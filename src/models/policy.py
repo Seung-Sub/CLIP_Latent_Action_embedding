@@ -48,7 +48,7 @@ class FlowPolicy(nn.Module):
 
     source(수송 출발점) 3종 — 각각 다른 문헌의 결합(coupling):
       noise  : x0 ~ N(0, x0_std²)      (π0 / Diffusion Policy 계열)
-      past   : x0 = g(A_past) 토큰      (A2A식 액션→액션, 시간 연속성 활용)
+      past   : x0 = g(A_past) 토큰      (A2A: Action-to-Action Flow Matching, arXiv 2602.07322)
       vision : x0 = z_cur 토큰          (VITA식 시각→액션 수송)
     x0_std 버퍼는 학습 시작 시 잠재 타깃 g(A_fut) 표준편차로 설정(체크포인트 저장).
     """
