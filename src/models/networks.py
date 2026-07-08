@@ -165,10 +165,13 @@ class DeltaAE(nn.Module):
             logits.masked_fill(~pos, float("-inf")), dim=1)
         return (all_lse - pos_lse).mean()
 
-    def losses(self, chunk, delta_z, w, z_t=None, text_emb=None, sent_ids=None):
-        ghat = self.g(chunk, z_t)                # 액션(+상태) → 잠재
+    def losses(self, chunk, delta_z, w, z_t=None, text_emb=None, sent_ids=None,
+               g_zt=None):
+        # E0 자명해 프로브: g_zt로 g의 z_t 입력만 절제 (h는 z_t intact 유지).
+        gz = z_t if g_zt is None else g_zt
+        ghat = self.g(chunk, gz)                 # 액션(+상태) → 잠재
         ahat = self.h(delta_z, z_t)              # 실제 Δz(+상태) → 액션 (FLD 대응)
-        acyc = self.h(ghat, z_t)                 # 왕복 (phase2 디코딩 경로)
+        acyc = self.h(ghat, z_t)                 # 왕복 (왕복 g는 절제된 gz 사용)
         l_recon = nn.functional.l1_loss(ahat, chunk)
         l_cycle = nn.functional.l1_loss(acyc, chunk)
         parts = {}
@@ -194,9 +197,9 @@ class DeltaAE(nn.Module):
             T = chunk.shape[1]
             half = T // 2
             # z_mid ≈ z_t + g(전반) 로 근사한 상태에서 후반 인코딩 (텔레스코핑 정합)
-            g_a = self.g(chunk[:, :half], z_t)
+            g_a = self.g(chunk[:, :half], gz)
             z_mid = (z_t + g_a) if z_t is not None else None
-            g_b = self.g(chunk[:, half:], z_mid)
+            g_b = self.g(chunk[:, half:], z_mid)  # 
             g_full = self.g(chunk, z_t)
             l_comp = nn.functional.mse_loss(g_a + g_b, g_full)
             total = total + w_comp * l_comp

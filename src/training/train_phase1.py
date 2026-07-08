@@ -197,6 +197,16 @@ def main():
             return 0.5 * (1 + np.cos(np.pi * min(p, 1.0)))
         sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
+    # E0 자명해 프로브: g 입력 z_t 절제 모드 (intact/zeros/shuffle)
+    g_ztcond = cfg["model"].get("g_ztcond", "intact")
+
+    def ablate(zt):
+        if g_ztcond == "zeros":
+            return torch.zeros_like(zt)
+        if g_ztcond == "shuffle":
+            return zt[torch.randperm(len(zt), device=zt.device)]
+        return zt
+
     t0 = time.time()
     for ep in range(epochs):
         model.train()
@@ -206,8 +216,11 @@ def main():
             if align_mode != "dz":
                 ids_b = ids_b.to(device)
                 kw = {"text_emb": sent_emb_t[ids_b], "sent_ids": ids_b}
+            zt_d = zt_b.to(device)
+            if g_ztcond != "intact":
+                kw["g_zt"] = ablate(zt_d)
             loss, parts = model.losses(chunk_b.to(device), delta_b.to(device),
-                                       w, zt_b.to(device), **kw)
+                                       w, zt_d, **kw)
             opt.zero_grad(); loss.backward(); opt.step()
             if sched:
                 sched.step()
@@ -216,6 +229,8 @@ def main():
         with torch.no_grad():
             kw_v = ({"text_emb": sent_emb_t[ids_va_t], "sent_ids": ids_va_t}
                     if align_mode != "dz" else {})
+            if g_ztcond != "intact":
+                kw_v["g_zt"] = ablate(Zv)
             val_loss, val_parts = model.losses(Cv, Dv, w, Zv, **kw_v)
         val_loss = val_loss.item()
         if val_loss < best_val - 1e-5:
@@ -241,11 +256,13 @@ def main():
     model.load_state_dict(best_state)
 
     # ---- 평가 (held-out 에피소드) ----
+    # E0: g는 학습과 동일한 z_t 절제 조건으로 평가 (h는 intact Zv)
     model.eval()
+    Gv = ablate(Zv) if g_ztcond != "intact" else Zv
     with torch.no_grad():
-        ghat = model.g(Cv, Zv).cpu().numpy()
+        ghat = model.g(Cv, Gv).cpu().numpy()
         ahat = model.h(Dv, Zv).cpu().numpy().reshape(len(Cv), -1)
-        acyc = model.h(model.g(Cv, Zv), Zv).cpu().numpy().reshape(len(Cv), -1)
+        acyc = model.h(model.g(Cv, Gv), Zv).cpu().numpy().reshape(len(Cv), -1)
     Cva = C_va.reshape(len(C_va), -1)
     dec_r2, cyc_r2 = r2(Cva, ahat), r2(Cva, acyc)
     # 맵핑 정렬도: g(a)와 실제 Δz의 평균 cosine
