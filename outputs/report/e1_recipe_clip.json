@@ -1,0 +1,4 @@
+{"experiment":"E1_native_recipe","anchor":"clip-vit-l-14","date":"2026-07-08",
+ "winner":{"normalize":true,"align_mode":"hybrid","contrast":0.1,"screen_sr":0.80,"screen_ci":[0.71,0.87]},
+ "sweep":{"norm_true":{"hy0.1":0.80,"hy0.3":0.79,"dz":0.73},"norm_false":{"hy0.1":0.73,"hy0.3":0.79,"dz":0.69}},
+ "note":"스크리닝 10eps/task=100roll. norm=true hy0.1 최고이나 hy0.3(79)·norm=false hy0.3(79)와 CI 겹침(구별 불가). CLIP은 hybrid 선호(dz 최하)."}

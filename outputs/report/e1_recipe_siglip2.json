@@ -1,0 +1,5 @@
+{"experiment":"E1_native_recipe","anchor":"siglip2-so400m","date":"2026-07-08",
+ "winner":{"normalize":false,"align_mode":"dz","screen_sr":0.87,"screen_ci":[0.79,0.92]},
+ "sweep":{"norm_true":{"hy0.1":0.77,"hy0.3":0.65,"dz":0.81},"norm_false":{"hy0.1":0.76,"hy0.3":0.77,"dz":0.87}},
+ "prediction_refuted":"등록 예측 'SigLIP2 norm=true 유리' 반증 — norm=false dz(87)가 norm=true dz(81) 상회.",
+ "note":"SigLIP2 native best(87) > CLIP native best(80) — 잠재 반전 신호이나 스크리닝 CI 겹침. E2 3시드 차분 CI가 결정. SigLIP2는 dz 선호(hybrid보다 높음), CLIP과 정반대 align-mode×anchor 상호작용."}

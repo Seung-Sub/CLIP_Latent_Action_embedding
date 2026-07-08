@@ -1,0 +1,653 @@
+{
+ "run_id": "e1screen_clip_normtrue_0.3",
+ "phase": "e1_screen",
+ "track": "libero",
+ "condition": {
+  "anchor": "clip-vit-l-14",
+  "anchor_cache_key": "clip-vit-l-14/joint/norm",
+  "obs": "clip-vit-l-14",
+  "lang": "L1",
+  "data_variant": "raw",
+  "extras": []
+ },
+ "suite": "libero_spatial",
+ "train_seed": 2,
+ "eval": {
+  "n_per_task": 10,
+  "per_task_sr": [
+   1.0,
+   0.9,
+   0.9,
+   0.9,
+   0.7,
+   0.7,
+   0.8,
+   0.9,
+   0.7,
+   0.4
+  ],
+  "suite_sr": 0.79,
+  "wilson_ci": [
+   0.7002,
+   0.8583
+  ],
+  "max_steps": 300,
+  "wait_steps": 10,
+  "paired_init_states": true,
+  "exec_horizon": 8,
+  "per_task": {
+   "0": {
+    "sr": 1.0,
+    "n": 10,
+    "wilson_ci": [
+     0.7224598312333834,
+     1.0
+    ],
+    "sr_at_220": 1.0,
+    "episodes": [
+     {
+      "ok": true,
+      "steps": 81
+     },
+     {
+      "ok": true,
+      "steps": 79
+     },
+     {
+      "ok": true,
+      "steps": 85
+     },
+     {
+      "ok": true,
+      "steps": 76
+     },
+     {
+      "ok": true,
+      "steps": 74
+     },
+     {
+      "ok": true,
+      "steps": 78
+     },
+     {
+      "ok": true,
+      "steps": 81
+     },
+     {
+      "ok": true,
+      "steps": 82
+     },
+     {
+      "ok": true,
+      "steps": 76
+     },
+     {
+      "ok": true,
+      "steps": 81
+     }
+    ],
+    "language": "pick up the black bowl between the plate and the ramekin and place it on the plate",
+    "n_init_states": 50,
+    "failure_modes": {
+     "reach": 0,
+     "grasp": 0,
+     "wrong_object": 0,
+     "wrong_goal": 0
+    }
+   },
+   "1": {
+    "sr": 0.9,
+    "n": 10,
+    "wilson_ci": [
+     0.5958436145024278,
+     0.9821242504842788
+    ],
+    "sr_at_220": 0.9,
+    "episodes": [
+     {
+      "ok": true,
+      "steps": 115
+     },
+     {
+      "ok": false,
+      "steps": 300
+     },
+     {
+      "ok": true,
+      "steps": 111
+     },
+     {
+      "ok": true,
+      "steps": 109
+     },
+     {
+      "ok": true,
+      "steps": 169
+     },
+     {
+      "ok": true,
+      "steps": 115
+     },
+     {
+      "ok": true,
+      "steps": 113
+     },
+     {
+      "ok": true,
+      "steps": 127
+     },
+     {
+      "ok": true,
+      "steps": 111
+     },
+     {
+      "ok": true,
+      "steps": 116
+     }
+    ],
+    "language": "pick up the black bowl next to the ramekin and place it on the plate",
+    "n_init_states": 50,
+    "failure_modes": {
+     "reach": 0,
+     "grasp": 0,
+     "wrong_object": 0,
+     "wrong_goal": 1
+    }
+   },
+   "2": {
+    "sr": 0.9,
+    "n": 10,
+    "wilson_ci": [
+     0.5958436145024278,
+     0.9821242504842788
+    ],
+    "sr_at_220": 0.9,
+    "episodes": [
+     {
+      "ok": true,
+      "steps": 100
+     },
+     {
+      "ok": true,
+      "steps": 94
+     },
+     {
+      "ok": true,
+      "steps": 102
+     },
+     {
+      "ok": true,
+      "steps": 101
+     },
+     {
+      "ok": true,
+      "steps": 94
+     },
+     {
+      "ok": true,
+      "steps": 94
+     },
+     {
+      "ok": false,
+      "steps": 300
+     },
+     {
+      "ok": true,
+      "steps": 100
+     },
+     {
+      "ok": true,
+      "steps": 104
+     },
+     {
+      "ok": true,
+      "steps": 94
+     }
+    ],
+    "language": "pick up the black bowl from table center and place it on the plate",
+    "n_init_states": 50,
+    "failure_modes": {
+     "reach": 0,
+     "grasp": 0,
+     "wrong_object": 0,
+     "wrong_goal": 1
+    }
+   },
+   "3": {
+    "sr": 0.9,
+    "n": 10,
+    "wilson_ci": [
+     0.5958436145024278,
+     0.9821242504842788
+    ],
+    "sr_at_220": 0.9,
+    "episodes": [
+     {
+      "ok": true,
+      "steps": 87
+     },
+     {
+      "ok": true,
+      "steps": 83
+     },
+     {
+      "ok": true,
+      "steps": 89
+     },
+     {
+      "ok": true,
+      "steps": 93
+     },
+     {
+      "ok": true,
+      "steps": 112
+     },
+     {
+      "ok": true,
+      "steps": 88
+     },
+     {
+      "ok": true,
+      "steps": 86
+     },
+     {
+      "ok": true,
+      "steps": 88
+     },
+     {
+      "ok": true,
+      "steps": 80
+     },
+     {
+      "ok": false,
+      "steps": 300
+     }
+    ],
+    "language": "pick up the black bowl on the cookie box and place it on the plate",
+    "n_init_states": 50,
+    "failure_modes": {
+     "reach": 0,
+     "grasp": 1,
+     "wrong_object": 0,
+     "wrong_goal": 0
+    }
+   },
+   "4": {
+    "sr": 0.7,
+    "n": 10,
+    "wilson_ci": [
+     0.39677321997956516,
+     0.892210712513788
+    ],
+    "sr_at_220": 0.7,
+    "episodes": [
+     {
+      "ok": true,
+      "steps": 126
+     },
+     {
+      "ok": true,
+      "steps": 181
+     },
+     {
+      "ok": false,
+      "steps": 300
+     },
+     {
+      "ok": true,
+      "steps": 129
+     },
+     {
+      "ok": true,
+      "steps": 138
+     },
+     {
+      "ok": true,
+      "steps": 134
+     },
+     {
+      "ok": true,
+      "steps": 124
+     },
+     {
+      "ok": true,
+      "steps": 122
+     },
+     {
+      "ok": false,
+      "steps": 300
+     },
+     {
+      "ok": false,
+      "steps": 300
+     }
+    ],
+    "language": "pick up the black bowl in the top drawer of the wooden cabinet and place it on the plate",
+    "n_init_states": 50,
+    "failure_modes": {
+     "reach": 0,
+     "grasp": 2,
+     "wrong_object": 0,
+     "wrong_goal": 1
+    }
+   },
+   "5": {
+    "sr": 0.7,
+    "n": 10,
+    "wilson_ci": [
+     0.39677321997956516,
+     0.892210712513788
+    ],
+    "sr_at_220": 0.6,
+    "episodes": [
+     {
+      "ok": false,
+      "steps": 300
+     },
+     {
+      "ok": true,
+      "steps": 93
+     },
+     {
+      "ok": true,
+      "steps": 92
+     },
+     {
+      "ok": true,
+      "steps": 99
+     },
+     {
+      "ok": true,
+      "steps": 166
+     },
+     {
+      "ok": true,
+      "steps": 89
+     },
+     {
+      "ok": true,
+      "steps": 294
+     },
+     {
+      "ok": true,
+      "steps": 100
+     },
+     {
+      "ok": false,
+      "steps": 300
+     },
+     {
+      "ok": false,
+      "steps": 300
+     }
+    ],
+    "language": "pick up the black bowl on the ramekin and place it on the plate",
+    "n_init_states": 50,
+    "failure_modes": {
+     "reach": 0,
+     "grasp": 0,
+     "wrong_object": 0,
+     "wrong_goal": 3
+    }
+   },
+   "6": {
+    "sr": 0.8,
+    "n": 10,
+    "wilson_ci": [
+     0.49015684672072335,
+     0.9433190520193067
+    ],
+    "sr_at_220": 0.8,
+    "episodes": [
+     {
+      "ok": true,
+      "steps": 111
+     },
+     {
+      "ok": true,
+      "steps": 113
+     },
+     {
+      "ok": true,
+      "steps": 108
+     },
+     {
+      "ok": true,
+      "steps": 104
+     },
+     {
+      "ok": true,
+      "steps": 101
+     },
+     {
+      "ok": true,
+      "steps": 109
+     },
+     {
+      "ok": false,
+      "steps": 300
+     },
+     {
+      "ok": true,
+      "steps": 106
+     },
+     {
+      "ok": true,
+      "steps": 111
+     },
+     {
+      "ok": false,
+      "steps": 300
+     }
+    ],
+    "language": "pick up the black bowl next to the cookie box and place it on the plate",
+    "n_init_states": 50,
+    "failure_modes": {
+     "reach": 0,
+     "grasp": 1,
+     "wrong_object": 0,
+     "wrong_goal": 1
+    }
+   },
+   "7": {
+    "sr": 0.9,
+    "n": 10,
+    "wilson_ci": [
+     0.5958436145024278,
+     0.9821242504842788
+    ],
+    "sr_at_220": 0.9,
+    "episodes": [
+     {
+      "ok": true,
+      "steps": 124
+     },
+     {
+      "ok": true,
+      "steps": 118
+     },
+     {
+      "ok": true,
+      "steps": 120
+     },
+     {
+      "ok": true,
+      "steps": 116
+     },
+     {
+      "ok": true,
+      "steps": 118
+     },
+     {
+      "ok": true,
+      "steps": 116
+     },
+     {
+      "ok": true,
+      "steps": 121
+     },
+     {
+      "ok": true,
+      "steps": 139
+     },
+     {
+      "ok": false,
+      "steps": 300
+     },
+     {
+      "ok": true,
+      "steps": 118
+     }
+    ],
+    "language": "pick up the black bowl on the stove and place it on the plate",
+    "n_init_states": 50,
+    "failure_modes": {
+     "reach": 0,
+     "grasp": 0,
+     "wrong_object": 0,
+     "wrong_goal": 1
+    }
+   },
+   "8": {
+    "sr": 0.7,
+    "n": 10,
+    "wilson_ci": [
+     0.39677321997956516,
+     0.892210712513788
+    ],
+    "sr_at_220": 0.6,
+    "episodes": [
+     {
+      "ok": true,
+      "steps": 101
+     },
+     {
+      "ok": true,
+      "steps": 242
+     },
+     {
+      "ok": true,
+      "steps": 179
+     },
+     {
+      "ok": true,
+      "steps": 99
+     },
+     {
+      "ok": false,
+      "steps": 300
+     },
+     {
+      "ok": false,
+      "steps": 300
+     },
+     {
+      "ok": false,
+      "steps": 300
+     },
+     {
+      "ok": true,
+      "steps": 102
+     },
+     {
+      "ok": true,
+      "steps": 101
+     },
+     {
+      "ok": true,
+      "steps": 105
+     }
+    ],
+    "language": "pick up the black bowl next to the plate and place it on the plate",
+    "n_init_states": 50,
+    "failure_modes": {
+     "reach": 0,
+     "grasp": 2,
+     "wrong_object": 0,
+     "wrong_goal": 1
+    }
+   },
+   "9": {
+    "sr": 0.4,
+    "n": 10,
+    "wilson_ci": [
+     0.16817758120350967,
+     0.6873304525498135
+    ],
+    "sr_at_220": 0.4,
+    "episodes": [
+     {
+      "ok": false,
+      "steps": 300
+     },
+     {
+      "ok": true,
+      "steps": 134
+     },
+     {
+      "ok": true,
+      "steps": 121
+     },
+     {
+      "ok": false,
+      "steps": 300
+     },
+     {
+      "ok": false,
+      "steps": 300
+     },
+     {
+      "ok": false,
+      "steps": 300
+     },
+     {
+      "ok": false,
+      "steps": 300
+     },
+     {
+      "ok": true,
+      "steps": 120
+     },
+     {
+      "ok": false,
+      "steps": 300
+     },
+     {
+      "ok": true,
+      "steps": 122
+     }
+    ],
+    "language": "pick up the black bowl on the wooden cabinet and place it on the plate",
+    "n_init_states": 50,
+    "failure_modes": {
+     "reach": 0,
+     "grasp": 5,
+     "wrong_object": 0,
+     "wrong_goal": 1
+    }
+   }
+  },
+  "sr_at_220": 0.77,
+  "failure_modes": {
+   "reach": 0,
+   "grasp": 11,
+   "wrong_object": 0,
+   "wrong_goal": 10
+  },
+  "infer_ms_mean": 40.38
+ },
+ "offline": {
+  "phase1_r2": 0.6771858930587769,
+  "phase1_cycle_r2": 0.8706777095794678,
+  "retr_top1": 3.623879458325386,
+  "latcos": 0.18271653354167938
+ },
+ "train": {
+  "epochs": 50,
+  "lr": 0.0001,
+  "batch_size": 256
+ },
+ "config_hash": "15099b1a9a17",
+ "wandb": "phase2_libero_fm",
+ "notes": "E1 screening 10eps/task paired: anchor=clip norm=true align=0.3"
+}
