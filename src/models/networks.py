@@ -154,10 +154,11 @@ class DeltaAE(nn.Module):
             # SigLIP 쌍별: label ±1, loss = −Σ log σ(label·(t·sim + b)) / B
             logits = (gn @ tn.T) * self.logit_scale.exp().clamp(max=200.0) \
                 + self.logit_bias
-            labels = torch.where(pos, 1.0, -1.0)
-            # 전 쌍 평균 (버그 수정: .sum(1)은 ~B배 커져 hybrid에서 align 지배 →
-            # align/recon과 스케일 정합 위해 mean over all pairs)
-            return -nn.functional.logsigmoid(labels * logits).mean()
+            # 양성/음성 균형 시그모이드 (스케일 안정: sum은 ~B배 과대, mean-all은
+            # 음성 지배로 과소 → 양성·음성 각각 평균 후 합산 = 둘 다 O(1))
+            lp = nn.functional.logsigmoid(logits)[pos].mean()
+            ln = nn.functional.logsigmoid(-logits)[~pos].mean()
+            return -(lp + ln)
         logits = gn @ tn.T * self.logit_scale.exp().clamp(max=100.0)
         all_lse = torch.logsumexp(logits, dim=1)
         pos_lse = torch.logsumexp(
