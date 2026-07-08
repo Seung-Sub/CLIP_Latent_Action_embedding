@@ -106,6 +106,7 @@ class Siglip2Anchor(BaseAnchor):
         self.processor = AutoProcessor.from_pretrained(src)
         self.dim = self.model.config.vision_config.hidden_size    # 1152
         self.dim_text = self.dim
+        self.save_tokens = False                  # E3에서 True로 (패치 토큰 반환)
 
     @staticmethod
     def _tensor(out):
@@ -115,9 +116,13 @@ class Siglip2Anchor(BaseAnchor):
     @torch.no_grad()
     def encode_images(self, pil_images):
         inputs = self.processor(images=pil_images, return_tensors="pt").to(self.device)
-        emb = self._tensor(self.model.get_image_features(
-            pixel_values=inputs["pixel_values"].to(self.model.dtype)))
-        return {"embeds": self._post(emb), "tokens": None}
+        px = inputs["pixel_values"].to(self.model.dtype)
+        emb = self._tensor(self.model.get_image_features(pixel_values=px))
+        tokens = None
+        if getattr(self, "save_tokens", False):    # E3: vision tower 패치 토큰 노출
+            vout = self.model.vision_model(pixel_values=px)
+            tokens = vout.last_hidden_state.float().cpu().numpy()   # (N, P, 1152)
+        return {"embeds": self._post(emb), "tokens": tokens}
 
     @torch.no_grad()
     def encode_texts(self, texts):

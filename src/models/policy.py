@@ -148,3 +148,45 @@ def policy_losses(zeta, chunk_fut, z_cur, z_next, ae, w):
     l_wm = 0.5 * (1 - cos(zeta, wm_target, dim=1)).mean()
     total = w["lat"] * l_lat + w["act"] * l_act + w["wm"] * l_wm
     return total, {"lat": l_lat.item(), "act": l_act.item(), "wm": l_wm.item()}
+
+
+class ObsFusion(nn.Module):
+    """E3: 관측 패치 토큰 융합 (OpenVLA/Prismatic식 — 전역 pooling 없이 공간 보존).
+
+    mode:
+      none      : obs 토큰 없음
+      meanpatch : 패치 평균 단일 토큰 (현행 obs2 — P6 적신호, causal-confusion 위험)
+      attnpool  : K개 학습 쿼리가 (인코더별 latent 사영 후 토큰축 concat된) 패치 토큰에
+                  cross-attend → K개 obs 토큰 (Set Transformer PMA식, 공간 정보 보존)
+
+    입력 patch_dims: {enc_name: patch_dim} — 각 인코더 패치를 latent로 사영 후 concat.
+    출력: (B, K, latent) — FlowPolicy 조건 토큰에 append.
+    """
+
+    def __init__(self, mode, patch_dims, latent, n_query=8, heads=8):
+        super().__init__()
+        self.mode = mode
+        self.n_query = n_query if mode == "attnpool" else 1
+        self.projs = nn.ModuleDict({
+            k: nn.Linear(d, latent) for k, d in patch_dims.items()})
+        if mode == "attnpool":
+            self.query = nn.Parameter(torch.zeros(1, n_query, latent))
+            nn.init.normal_(self.query, std=0.02)
+            self.ln_kv = nn.LayerNorm(latent)
+            self.ln_q = nn.LayerNorm(latent)
+            self.attn = nn.MultiheadAttention(latent, heads, batch_first=True)
+            self.ln_o = nn.LayerNorm(latent)
+            self.ffn = nn.Sequential(nn.Linear(latent, 4 * latent), nn.GELU(),
+                                     nn.Linear(4 * latent, latent))
+
+    def forward(self, patches):
+        """patches: {enc_name: (B, P_enc, patch_dim)}. → (B, K, latent)."""
+        toks = [self.projs[k](v) for k, v in patches.items()]
+        kv = torch.cat(toks, dim=1)                    # 토큰축 concat (B, ΣP, latent)
+        if self.mode == "meanpatch":
+            return kv.mean(dim=1, keepdim=True)        # (B, 1, latent)
+        q = self.query.expand(len(kv), -1, -1)
+        a, _ = self.attn(self.ln_q(q), self.ln_kv(kv), self.ln_kv(kv))
+        q = q + a
+        q = q + self.ffn(self.ln_o(q))
+        return q                                       # (B, K, latent)
