@@ -116,7 +116,7 @@ class DeltaAE(nn.Module):
                  layers=4, dropout=0.0, state_cond=True,
                  align_mode="dz", contrast_w=0.0, contrast_head=False,
                  g_state_cond=None, h_state_cond=None, encoder_kind="cnn",
-                 contrast_loss="infonce"):
+                 contrast_loss="infonce", sigmoid_bias0=-5.5):
         super().__init__()
         # QueST 절제 #4: g/h 상태조건 개별 제어 (기본 = 기존 state_cond 동일)
         g_sc = state_cond if g_state_cond is None else g_state_cond
@@ -134,7 +134,7 @@ class DeltaAE(nn.Module):
             if contrast_loss == "sigmoid":
                 # SigLIP 관례 초기화 (2303.15343): t'=log10, b=-10 (전역 1쌍)
                 self.logit_scale = nn.Parameter(torch.tensor(float(np.log(10.0))))
-                self.logit_bias = nn.Parameter(torch.tensor(-10.0))
+                self.logit_bias = nn.Parameter(torch.tensor(float(sigmoid_bias0)))
             else:
                 # InfoNCE 학습형 온도 (CLIP 관례: log(1/0.07))
                 self.logit_scale = nn.Parameter(torch.tensor(float(np.log(1 / 0.07))))
