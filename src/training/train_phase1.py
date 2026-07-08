@@ -160,6 +160,7 @@ def main():
                     align_mode=align_mode,
                     contrast_w=float(w.get("contrast", 0.0)),
                     contrast_head=m_cfg.get("contrast_head", False),
+                    contrast_loss=m_cfg.get("contrast_loss", "infonce"),
                     g_state_cond=m_cfg.get("g_state_cond"),
                     h_state_cond=m_cfg.get("h_state_cond"),
                     encoder_kind=m_cfg.get("encoder_kind", "cnn")).to(device)

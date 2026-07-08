@@ -81,7 +81,8 @@ def main():
                  align_mode=p1["model"].get("align_mode", "dz"),
                  g_state_cond=p1["model"].get("g_state_cond"),
                  h_state_cond=p1["model"].get("h_state_cond"),
-                 encoder_kind=p1["model"].get("encoder_kind", "cnn")).to(device)
+                 encoder_kind=p1["model"].get("encoder_kind", "cnn"),
+                 contrast_loss=p1["model"].get("contrast_loss", "infonce")).to(device)
     ae.load_state_dict(ck["state_dict"])
     ae.eval()
     for p in ae.parameters():

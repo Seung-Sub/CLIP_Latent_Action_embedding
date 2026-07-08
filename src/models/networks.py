@@ -115,7 +115,8 @@ class DeltaAE(nn.Module):
     def __init__(self, action_dim, n_chunk, latent_dim=768, hidden=512,
                  layers=4, dropout=0.0, state_cond=True,
                  align_mode="dz", contrast_w=0.0, contrast_head=False,
-                 g_state_cond=None, h_state_cond=None, encoder_kind="cnn"):
+                 g_state_cond=None, h_state_cond=None, encoder_kind="cnn",
+                 contrast_loss="infonce"):
         super().__init__()
         # QueST 절제 #4: g/h 상태조건 개별 제어 (기본 = 기존 state_cond 동일)
         g_sc = state_cond if g_state_cond is None else g_state_cond
@@ -127,25 +128,35 @@ class DeltaAE(nn.Module):
         assert align_mode in ("dz", "direct", "hybrid"), align_mode
         self.align_mode = align_mode
         self.contrast_w = contrast_w
+        self.contrast_loss = contrast_loss   # "infonce"(기본) | "sigmoid"(SigLIP식)
         if align_mode != "dz":
-            # 학습형 온도 (CLIP 관례: logit_scale = log(1/T), T init 0.07)
             import numpy as np
-            self.logit_scale = nn.Parameter(torch.tensor(float(np.log(1 / 0.07))))
-            # 노름 분리 (레시피 변형): contrastive를 전용 투영 위에서 계산해
-            # 회귀(비정규화 Δz)·디코드 기하와 분리 (SimCLR 투영헤드 원리)
+            if contrast_loss == "sigmoid":
+                # SigLIP 관례 초기화 (2303.15343): t'=log10, b=-10 (전역 1쌍)
+                self.logit_scale = nn.Parameter(torch.tensor(float(np.log(10.0))))
+                self.logit_bias = nn.Parameter(torch.tensor(-10.0))
+            else:
+                # InfoNCE 학습형 온도 (CLIP 관례: log(1/0.07))
+                self.logit_scale = nn.Parameter(torch.tensor(float(np.log(1 / 0.07))))
+            # 노름 분리 (레시피 변형): contrastive 전용 투영 (SimCLR 투영헤드 원리)
             if contrast_head:
                 self.contrast_proj = nn.Linear(latent_dim, latent_dim)
 
     def info_nce(self, ghat, text_emb, sent_ids):
-        """SupCon식 다중 양성 InfoNCE. text_emb (B, d), sent_ids (B,).
-        contrast_proj 존재 시 g를 투영 후 정규화 (노름 분리 레시피)."""
+        """대조 정렬 손실. contrast_loss="infonce"(SupCon 다중양성) | "sigmoid"(SigLIP식
+        쌍별 이진, 전역 t·b). contrast_proj 존재 시 g를 투영 후 정규화 (노름 분리)."""
         if hasattr(self, "contrast_proj"):
             ghat = self.contrast_proj(ghat)
         gn = nn.functional.normalize(ghat, dim=1)
         tn = nn.functional.normalize(text_emb, dim=1)
-        logits = gn @ tn.T * self.logit_scale.exp().clamp(max=100.0)
         pos = (sent_ids[:, None] == sent_ids[None, :])       # (B, B) 동일 문장 = 양성
-        # loss_i = −log( Σ_pos exp / Σ_all exp )
+        if self.contrast_loss == "sigmoid":
+            # SigLIP 쌍별: label ±1, loss = −Σ log σ(label·(t·sim + b)) / B
+            logits = (gn @ tn.T) * self.logit_scale.exp().clamp(max=200.0) \
+                + self.logit_bias
+            labels = torch.where(pos, 1.0, -1.0)
+            return -nn.functional.logsigmoid(labels * logits).sum(1).mean()
+        logits = gn @ tn.T * self.logit_scale.exp().clamp(max=100.0)
         all_lse = torch.logsumexp(logits, dim=1)
         pos_lse = torch.logsumexp(
             logits.masked_fill(~pos, float("-inf")), dim=1)
