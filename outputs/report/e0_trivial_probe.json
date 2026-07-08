@@ -1,0 +1,14 @@
+{
+ "experiment": "E0_trivial_solution_probe",
+ "date": "2026-07-08",
+ "anchor": "clip-vit-l-14", "recipe": "unnorm hybrid lambda0.3 v3",
+ "modes": {
+  "intact":  {"dec_r2": 0.682, "align_cos": 0.311, "a2z_top1": 11.3},
+  "zeros":   {"dec_r2": 0.682, "align_cos": 0.208, "a2z_top1": 0.9},
+  "shuffle": {"dec_r2": 0.682, "align_cos": 0.203, "a2z_top1": 0.8}
+ },
+ "flag": false,
+ "verdict": "NOT trivial — g uses z_t as real condition. a2z retrieval collapses 11.3->0.9 (chance ~0.1) under z_t ablation; align 0.31->0.20. dec R2 invariant is EXPECTED (h path, mechanically independent of g's z_t). cycle>>dec gap explained by VITA-style g trained via cycle loss to be h-decodable, not trivial solution. Residual align 0.20 = z_t-independent Δz component (dominant action direction).",
+ "gate": "PASS — E1-E5 interpretation valid",
+ "note": "align cos = grounding regularizer not exact-match (loose 0.31, consistent w/ VITA ablation & ledger semantics)"
+}
